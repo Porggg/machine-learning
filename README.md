@@ -4,7 +4,7 @@ Ouvrir `index.html` (double-clic, aucun serveur nécessaire, fonctionne hors-lig
 
 ## Structure
 - `index.html` — accueil (chapitres + planning avec liens vers les PDF de `../Textbooks`).
-- `linear-regression.html`, `logistic-regression.html`, `svm.html` — chapitres 1–3 (texte, blocs « Les objets en jeu », preuves repliables, emplacements `<div data-scene="…">`).
+- `linear-regression.html`, `logistic-regression.html`, `svm.html`, `model-selection.html` — chapitres 1–4 (texte, blocs « Les objets en jeu », preuves repliables, emplacements `<div data-scene="…">`).
 - `homework.html` — devoirs maison (énoncés, indices, corrigés, expériences du HW1 dans `js/homework/hw1.js`). Pour un nouveau devoir : ajouter une section `<h2 id="hwN">` et un fichier `js/homework/hwN.js`.
 - `exercises.html` — entraînement à trous ; exercices dans `js/exercises/data-ch*.js` (format documenté en tête de `engine.js`).
 - `js/core/` — le moteur :
@@ -12,7 +12,7 @@ Ouvrir `index.html` (double-clic, aucun serveur nécessaire, fonctionne hors-lig
   - `plot2d.js` : rendu 2D (grille manim, courbes, contours, heatmaps, poignées, LaTeX en surcouche).
   - `scene3d.js` : rendu 3D Three.js (contexte WebGL partagé, caméra orbitale, surfaces, flèches, labels).
   - `ui.js` : cadres de widgets, sliders, lecteur pas-à-pas, preuves « pas à pas », sommaire.
-- `js/linreg/`, `js/logreg/`, `js/svm/` — une scène = `ML.scene('id', host => { … })`.
+- `js/linreg/`, `js/logreg/`, `js/svm/`, `js/modelsel/` — une scène = `ML.scene('id', host => { … })`.
 - `lib/` — KaTeX et Three.js r158 en local.
 
 ## Ajouter un chapitre

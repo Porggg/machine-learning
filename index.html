@@ -15,6 +15,7 @@
     <a href="linear-regression.html">1 · Régression linéaire</a>
     <a href="logistic-regression.html">2 · Régression logistique</a>
     <a href="svm.html">3 · SVM</a>
+    <a href="model-selection.html">4 · Sélection de modèle</a>
     <a href="exercises.html">Entraînement</a>
     <a class="local-only" href="homework.html">Devoirs</a>
   </nav>
@@ -56,20 +57,28 @@
       <p>Marge géométrique, Lagrangien et point-selle, dualité faible/forte, KKT, dual et vecteurs de support (SMO), marge souple et hinge, kernels polynomial et RBF. <b>9 scènes.</b></p>
     </div>
   </a>
+  <a class="card" href="model-selection.html">
+    <canvas data-thumb="ms"></canvas>
+    <div class="card-body">
+      <div class="meta">Cours 8 · 10/6 · PRML 1.3 · HW4</div>
+      <h3>4 · Sélection de modèle</h3>
+      <p>Erreur de généralisation vs d'entraînement, optimisme de l'ERM, sous-/sur-apprentissage, régularisation, train / validation / test, sur-apprendre la validation, validation croisée. <b>10 scènes.</b></p>
+    </div>
+  </a>
   <a class="card" href="exercises.html">
     <canvas data-thumb="quiz"></canvas>
     <div class="card-body">
       <div class="meta">Définitions · dérivations · calculs</div>
       <h3>Entraînement (textes à trous)</h3>
-      <p>44 exercices type examen (définitions, dérivations à trous, calculs à valeurs aléatoires), réponses libres en LaTeX ou texte, corrigés détaillés.</p>
+      <p>59 exercices type examen (définitions, dérivations à trous, calculs à valeurs aléatoires), réponses libres en LaTeX ou texte, corrigés détaillés.</p>
     </div>
   </a>
   <a class="card local-only" href="homework.html">
     <canvas data-thumb="hw"></canvas>
     <div class="card-body">
-      <div class="meta">HW1 à rendre le 29/09 · HW0 rendu</div>
+      <div class="meta">HW2 à rendre le 6/10 · HW1 et HW0 passés</div>
       <h3>Devoirs maison</h3>
-      <p>Énoncés reformulés, indices progressifs, corrigés détaillés et expériences numériques du HW1 reproduites dans le navigateur.</p>
+      <p>Énoncés reformulés, indices progressifs, corrigés détaillés et expériences numériques du HW1 et Newton du HW2 reproduits dans le navigateur.</p>
     </div>
   </a>
 </div>
@@ -98,9 +107,9 @@
     ['4', '9/17', 'Classification — Logistic Regression', '', [['PRML 4.3', PRML + 223]], 'done', 'logistic-regression.html'],
     ['5', '9/22', 'Classification — Logistic Regression', 'HW2', [['PRML 4.3', PRML + 223]], 'done', 'logistic-regression.html'],
     ['–', '9/24', 'Chuseok Holiday', '', [], 'todo'],
-    ['6', '9/29', 'Classification — SVMs', '', [['PRML 7.1', PRML + 346]], 'todo', 'svm.html'],
+    ['6', '9/29', 'Classification — SVMs', '', [['PRML 7.1', PRML + 346]], 'done', 'svm.html'],
     ['7', '10/1', 'Classification — SVMs', 'HW3', [['PRML 6.1–6.4', PRML + 313]], 'todo', 'svm.html'],
-    ['8', '10/6', 'Generalization and Model Selection', 'HW4', [], 'todo'],
+    ['8', '10/6', 'Generalization and Model Selection', 'HW4', [['PRML 1.3', PRML + 52]], 'todo', 'model-selection.html'],
     ['9', '10/8', 'Classification — NNs', '', [['PRML 5.1–5.3', PRML + 247]], 'todo'],
     ['10', '10/13', 'Classification — NNs', 'HW5 : NNs for classification', [['PRML 5.1–5.3', PRML + 247]], 'todo'],
     ['11', '10/15', 'Online Learning — EW', 'HW6', [['FML ch. 8.2', null]], 'todo'],
@@ -148,12 +157,21 @@
       [-m, 0, m].forEach((o, i) => p.fn(x => 0.8 * x + o * 1.28, { color: i === 1 ? C.yellow : C.yellow, width: i === 1 ? 2.5 : 1, dash: i === 1 ? [] : [6, 4] }));
       A.forEach(q => p.point(q[0], q[1], { color: C.blue, r: 4 })); B.forEach(q => p.point(q[0], q[1], { color: C.red, r: 4 }));
     },
+    ms: (p, t) => {
+      const lo = -2.2, hi = 1.6, X = d => -3.1 + d * 0.5, cl = v => Math.max(lo, Math.min(hi, v));
+      const tr = d => 0.9 - 1.6 * (1 - Math.exp(-d / 3)), ge = d => 0.95 - 1.3 * (1 - Math.exp(-d / 2.2)) + 0.012 * Math.exp(0.42 * d);
+      p.polyline(M.range(13).map(d => [X(d), cl(tr(d))]), { color: C.blue, width: 2.5 });
+      p.polyline(M.range(13).map(d => [X(d), cl(ge(d))]), { color: C.red, width: 2.5 });
+      const d = 6 + 6 * Math.sin(t * 0.6);
+      p.vline(X(d), { color: C.yellow, width: 1.5, alpha: 0.7 });
+      p.point(X(d), cl(ge(d)), { color: C.red, r: 5 }); p.point(X(d), cl(tr(d)), { color: C.blue, r: 5 });
+    },
     hw: (p, t) => {
       const w = [0.1, 11.8, -33.5, 21.9]; // cubique proche de sin 2πx sur [0,1], remis à l'échelle
       p.fn(x => Math.sin(Math.PI * (x + 3.5) / 3.5) * 1.6, { color: C.green, width: 2 });
       const k = 0.5 + 0.5 * Math.sin(t);
       p.fn(x => { const u = (x + 3.5) / 7; return 1.6 * (w[0] + w[1] * u + w[2] * u * u + w[3] * u ** 3) * (0.3 + 0.7 * k); }, { color: C.yellow, width: 3 });
-      p.tex('hw', -3.3, 1.8, '\\text{HW1}', { color: '#ddd', anchor: 'left', size: 16 });
+      p.tex('hw', -3.3, 1.8, '\\text{HW1, HW2}', { color: '#ddd', anchor: 'left', size: 16 });
     },
     quiz: (p, t) => {
       p.tex('q', 0, 0.7, '\\bw_{\\text{ridge}} = \\big(\\;\\underline{\\qquad}\\; + \\bPhi\\T\\bPhi\\big)^{-1}\\bPhi\\T\\by', { color: '#ddd', size: 17 });

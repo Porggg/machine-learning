@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Généralisation et sélection de modèle — Cours interactif ML</title>
+<link rel="stylesheet" href="lib/katex/katex.min.css">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <a class="brand" href="index.html"><span class="pi">∇</span>ML · POSTECH</a>
+  <nav>
+    <a href="index.html">Accueil</a>
+    <a href="linear-regression.html">1 · Régression linéaire</a>
+    <a href="logistic-regression.html">2 · Régression logistique</a>
+    <a href="svm.html">3 · SVM</a>
+    <a href="model-selection.html" class="active">4 · Sélection de modèle</a>
+    <a href="exercises.html">Entraînement</a>
+    <a class="local-only" href="homework.html">Devoirs</a>
+  </nav>
+</header>
+
+<div class="layout">
+<aside class="sidebar">
+  <h4>Sommaire</h4>
+  <div class="toc"></div>
+  <div class="legend">
+    <h4>Sources</h4>
+    <div><span class="src slides">Slides</span> au programme (slides du cours)</div>
+    <div><span class="src book">PRML / DL</span> manuel de référence (lien → page)</div>
+    <div><span class="src extra">Hors slides</span> complément, pas dans les slides</div>
+  </div>
+</aside>
+
+<main class="content"><div class="content-inner">
+
+<h1>Généralisation et sélection de modèle<span class="sub">Generalization and Model Selection · Cours 8 (10/6)</span></h1>
+<div class="sources">
+  <a class="src slides" href="../Slides/5-model-selection.pdf" target="_blank">Slides 5-model-selection (28 p.)</a>
+  <a class="src book" href="../Textbooks/Pattern%20Recognition%20and%20Machine%20Learning.pdf#page=52" target="_blank">PRML §1.3 Model Selection p.32</a>
+  <a class="src book" href="../Textbooks/Pattern%20Recognition%20and%20Machine%20Learning.pdf#page=24" target="_blank">PRML §1.1 p.4–11</a>
+  <a class="src book" href="../Textbooks/Deep%20Learning%20-%20Foundations%20and%20Concepts.pdf#page=283" target="_blank">DL §9.3 Learning curves</a>
+</div>
+
+<p>Les chapitres 1 à 3 apprenaient à <strong>minimiser une erreur d'entraînement</strong>. Ce chapitre pose la vraie question : un modèle qui marche bien sur les données qu'il a vues marchera-t-il sur des données <em>nouvelles</em> ? Et comment choisir, sans tricher, entre plusieurs modèles (degré du polynôme, $\lambda$ du ridge, $C$ et noyau d'une SVM…) ? Plan des slides : <strong>(1)</strong> l'erreur de généralisation ; <strong>(2)</strong> sur-/sous-apprentissage et régularisation ; <strong>(3)</strong> sélection et évaluation (train / validation / test) ; <strong>(4)</strong> la validation croisée.</p>
+
+<div class="box intu"><div class="box-title">L'exemple qui court tout le chapitre</div>
+Comme dans les slides, on ajuste des polynômes $f_\bw(x) = \sum_{j=0}^dw_jx^j$ à $N = 24$ points. Notre version (pas exactement celle des slides, mais du même esprit) : $x\sim\mathrm{Unif}[-1,1]$, $y = f^\star(x) + \varepsilon$ avec $f^\star(x) = \sin(2.6x) + 0.4x$ et $\varepsilon\sim\N(0, 0.3^2)$. Comme <b>on connaît</b> la loi $P$, la scène peut calculer l'<b>erreur de généralisation exacte</b> $L(f)$ — ce qui est impossible en vrai, et c'est tout le sujet du chapitre.
+</div>
+
+<!-- ===================================================================== -->
+<h2 id="choose"><span class="num">1</span>Quel modèle choisir ?</h2>
+<div class="sources"><a class="src slides" href="../Slides/5-model-selection.pdf#page=3" target="_blank">Slides p.3–5</a><a class="src book" href="../Textbooks/Pattern%20Recognition%20and%20Machine%20Learning.pdf#page=27" target="_blank">PRML Fig. 1.4 p.7</a></div>
+<p>Trois polynômes (degrés 1, 3, 12), chacun minimisant la MSE d'entraînement dans sa classe. Le degré 12 a la plus petite erreur d'entraînement… mais on sent qu'il ne prédira pas bien un nouveau point. <em>Quelle mesure utiliser pour choisir ?</em></p>
+<div data-scene="ms-choose"></div>
+
+<div class="box def"><div class="box-title">Rappel — minimisation du risque empirique (ERM)</div>
+Étant donné un échantillon d'entraînement $S = \{(x_i,y_i)\}_{i=1}^N$, on choisit
+$$\hat f\in\argmin_{f\in\mathcal H}\hL_S(f),\qquad \hL_S(f) = \frac1N\sum_{i=1}^N\ell\big(y_i, f(x_i)\big).$$
+</div>
+<details class="objs" open><summary>Les objets en jeu</summary><dl>
+<dt>$\mathcal H$</dt><dd><span class="ty">ensemble de fonctions</span>La <b>classe d'hypothèses</b> (<em>hypothesis class</em>) : par ex. tous les polynômes de degré $\le d$. Le choix de $\mathcal H$ est lui-même une décision — c'est le sujet du chapitre.</dd>
+<dt>$\ell(y,\hat y)$</dt><dd><span class="ty">perte $\ge0$</span>Carrée en régression (ch. 1), cross-entropy en logistique (ch. 2), hinge pour les SVM (ch. 3), 0-1 pour compter les erreurs.</dd>
+<dt>$S$</dt><dd><span class="ty">échantillon aléatoire</span>Le jeu d'entraînement. Point clé du chapitre : <b>$S$ est aléatoire</b> (un autre tirage donnerait d'autres points), donc $\hat f$ aussi.</dd>
+<dt>$\hL_S(f)$</dt><dd><span class="ty">nombre</span>Le <b>risque empirique</b> de $f$ mesuré sur $S$.</dd>
+<dt>$\hat f = A(S)$</dt><dd><span class="ty">fonction apprise</span>Le résultat de l'algorithme d'apprentissage $A$ appliqué à $S$ (moindres carrés, GD, SMO…).</dd>
+</dl></details>
+
+<div class="box def"><div class="box-title">Le cadre i.i.d.</div>
+$S = \{(x_i,y_i)\}_{i=1}^N\sim P^N$ et un nouvel exemple $(x,y)\sim P$, indépendant de $S$. Les exemples d'entraînement et le nouvel exemple suivent <b>la même loi</b> $P$, qui décrit à la fois les entrées et l'incertitude sur les étiquettes. En général $P$ est inconnue. (On suppose ici la même loi à l'entraînement et à l'évaluation — pas de <em>distribution shift</em>.)
+</div>
+<details class="objs" open><summary>Les objets en jeu</summary><dl>
+<dt>$P$</dt><dd><span class="ty">loi sur $\mathcal X\times\mathcal Y$</span>La vraie loi des couples (entrée, étiquette) — la « vraie loi jointe $p(x,y)$ » du chapitre 1. Dans l'exemple : $x$ uniforme sur $[-1,1]$, puis $y$ gaussien autour de $f^\star(x)$.</dd>
+<dt>$P^N$</dt><dd><span class="ty">loi d'un échantillon</span>$N$ tirages <b>indépendants</b> de $P$ : c'est ce que signifie « i.i.d. ».</dd>
+<dt>« indépendant de $S$ »</dt><dd><span class="ty">hypothèse</span>Le nouvel exemple n'a pas servi à l'entraînement. Toute la difficulté de l'évaluation vient du fait que les données d'entraînement, elles, ne sont <em>pas</em> indépendantes de $\hat f$.</dd>
+</dl></details>
+
+<!-- ===================================================================== -->
+<h2 id="generalization"><span class="num">2</span>Erreur de généralisation, erreur d'entraînement, écart</h2>
+<div class="sources"><a class="src slides" href="../Slides/5-model-selection.pdf#page=6" target="_blank">Slides p.6–9</a></div>
+<div class="box def"><div class="box-title">Erreur de généralisation (<em>expected error</em>, <em>risk</em>)</div>
+Pour un prédicteur $f$ :
+$$L(f) := \E_{(x,y)\sim P}\big[\ell(y, f(x))\big].$$
+Régression avec perte carrée : $L(f) = \E[(y-f(x))^2]$ ; classification avec perte 0-1 : $L(f) = \Pr(f(x)\ne y)$. Le but de l'apprentissage est un $f$ de petit $L(f)$ — mais $P$ étant inconnue, on ne peut ni calculer ni minimiser $L$ directement.
+</div>
+<div class="box def"><div class="box-title">Erreur empirique, erreur de généralisation, écart de généralisation</div>
+$$\text{empirique : } \hL_S(\hat f) = \frac1N\sum_{i=1}^N\ell\big(y_i,\hat f(x_i)\big),\qquad \text{généralisation : } L(\hat f) = \E_{(x,y)\sim P}\big[\ell(y,\hat f(x))\big],\qquad \text{écart : } L(\hat f) - \hL_S(\hat f).$$
+Calculée sur l'ensemble d'entraînement, l'erreur empirique s'appelle <b>erreur d'entraînement</b>. Un grand écart positif signifie que l'erreur d'entraînement est optimiste. Un petit écart <b>n'implique pas</b> une petite erreur de généralisation (un modèle trop simple a un petit écart… et deux erreurs élevées).
+</div>
+<details class="objs" open><summary>Les objets en jeu</summary><dl>
+<dt>$L(f)$</dt><dd><span class="ty">nombre (pour $f$ fixé)</span>Moyenne de la perte sur <b>un nouvel exemple</b> tiré de $P$. Pour $f$ fixé, l'espérance porte seulement sur $(x,y)$. Dans l'exemple : $L(f) = \E_x[(f^\star(x)-f(x))^2] + \sigma^2$ (ch. 1, décomposition de la MSE).</dd>
+<dt>$L(\hat f)$</dt><dd><span class="ty">variable aléatoire</span>Si $f = \hat f = A(S)$, alors $L(\hat f)$ dépend du tirage de $S$ : c'est un nombre aléatoire. $\E_S[L(A(S))]$ est sa moyenne sur les échantillons possibles.</dd>
+<dt>$L(\hat f) - \hL_S(\hat f)$</dt><dd><span class="ty">écart de généralisation</span>(<em>generalization gap</em>) De combien l'erreur d'entraînement sous-estime l'erreur sur de nouvelles données.</dd>
+</dl></details>
+
+<h3 id="optimism">Pourquoi l'erreur d'entraînement est trop optimiste</h3>
+<div class="box thm"><div class="box-title">Énoncé des slides (p.8)</div>
+Pour $\hat f = A(S)$ appris sur $S$, en général
+$$\E_S\big[\hL_S(A(S))\big]\ne\E_S\big[L(A(S))\big],$$
+alors que pour un $f$ <b>fixé, choisi indépendamment de $S$</b> : $\ \E_S[\hL_S(f)] = L(f)$.
+</div>
+<p>Le prédicteur appris utilise <b>les mêmes données</b> pour s'ajuster et pour être évalué : il peut coller au bruit propre à cet échantillon. La scène tire 400 échantillons $S$ indépendants et, pour chacun, calcule l'erreur d'entraînement de $\hat f = A(S)$ et son erreur de généralisation exacte. À gauche : les deux nuages (et leurs moyennes) ; à droite : le même calcul pour un $f$ <em>fixé à l'avance</em>, où les deux moyennes coïncident.</p>
+<div data-scene="ms-optimism"></div>
+<details class="proof"><summary>Preuve — pour $f$ fixé, l'erreur empirique est sans biais</summary>
+<div class="proof-body">
+<div class="step">$f$ ne dépend pas de $S$ ; les $(x_i,y_i)$ suivent tous la loi $P$. Linéarité de l'espérance : $\E_S[\hL_S(f)] = \frac1N\sum_{i=1}^N\E\big[\ell(y_i,f(x_i))\big]$.</div>
+<div class="step">Chaque terme vaut $\E_{(x,y)\sim P}[\ell(y,f(x))] = L(f)$ (même loi). Donc $\E_S[\hL_S(f)] = \frac1N\cdot N\cdot L(f) = L(f)$.</div>
+<div class="step"><b>Où ça casse pour $\hat f$</b> : si $f = A(S)$, le terme $\ell(y_i, A(S)(x_i))$ fait intervenir $(x_i,y_i)$ <b>deux fois</b> — dans la perte et dans le prédicteur. $(x_i,y_i)$ et $A(S)$ ne sont plus indépendants, et l'égalité « chaque terme vaut $L$ » n'est plus vraie.</div>
+<div class="qed">∎</div>
+</div></details>
+<details class="proof"><summary>Preuve — pour l'ERM, l'erreur d'entraînement est en moyenne $\le$ l'erreur de généralisation <span class="hint">hors slides</span></summary>
+<div class="proof-body">
+<div class="step">Soit $f_{\mathcal H}^* = \argmin_{f\in\mathcal H}L(f)$ le meilleur prédicteur de la classe : il est <b>fixé</b> (ne dépend pas de $S$).</div>
+<div class="step">$\hat f$ minimise l'erreur empirique sur $\mathcal H$, donc $\hL_S(\hat f)\le\hL_S(f_{\mathcal H}^*)$. En moyenne : $\E_S[\hL_S(\hat f)]\le\E_S[\hL_S(f_{\mathcal H}^*)] = L(f_{\mathcal H}^*)$ (preuve précédente).</div>
+<div class="step">$\hat f\in\mathcal H$ donc $L(\hat f)\ge L(f_{\mathcal H}^*)$, et $\E_S[L(\hat f)]\ge L(f_{\mathcal H}^*)$.</div>
+<div class="step">Conclusion : $\E_S[\hL_S(\hat f)]\le L(f_{\mathcal H}^*)\le\E_S[L(\hat f)]$. L'erreur d'entraînement de l'ERM est <b>optimiste en moyenne</b>, et ceci pour n'importe quelle perte et n'importe quelle classe.</div>
+<div class="qed">∎</div>
+</div></details>
+<div class="extra-block">
+<p><b>Exemple chiffré (réponse à « Can you give an example? », slide 8)</b> <span class="src extra">Hors slides</span>. Moindres carrés avec $p$ paramètres, entrées fixées, bruit de variance $\sigma^2$ et vraie fonction dans la classe : $\E[\text{MSE d'entraînement}] = \sigma^2\big(1 - \frac pN\big)$ alors que l'erreur sur de nouvelles sorties aux mêmes entrées vaut $\sigma^2\big(1 + \frac pN\big)$. Avec $p = N$ (interpolation) l'erreur d'entraînement vaut 0 quel que soit le bruit. Cas extrême encore plus simple : un modèle qui <b>mémorise</b> les étiquettes (« table de consultation ») a une erreur d'entraînement nulle et ne prédit rien de mieux que le hasard ailleurs.</p>
+<details class="proof"><summary>Preuve — $\E[\text{MSE train}] = \sigma^2(1 - p/N)$</summary>
+<div class="proof-body">
+<div class="step">$\by = \bPhi\bw^\star + \boldsymbol\varepsilon$, $\E[\boldsymbol\varepsilon] = 0$, $\E[\boldsymbol\varepsilon\boldsymbol\varepsilon\T] = \sigma^2\bI$. Le résidu des moindres carrés est $\by - \bP\by = (\bI-\bP)\by$ avec $\bP = \bPhi(\bPhi\T\bPhi)^{-1}\bPhi\T$ (ch. 1, projection).</div>
+<div class="step">$(\bI-\bP)\bPhi = 0$ donc le résidu vaut $(\bI-\bP)\boldsymbol\varepsilon$, et $\|(\bI-\bP)\boldsymbol\varepsilon\|^2 = \boldsymbol\varepsilon\T(\bI-\bP)\boldsymbol\varepsilon$ ($\bI-\bP$ est un projecteur symétrique).</div>
+<div class="step">$\E[\boldsymbol\varepsilon\T\mathbf A\boldsymbol\varepsilon] = \tr(\mathbf A\,\E[\boldsymbol\varepsilon\boldsymbol\varepsilon\T]) = \sigma^2\tr(\mathbf A)$, et $\tr(\bI-\bP) = N - \tr(\bP) = N - p$ (la trace d'un projecteur = sa dimension).</div>
+<div class="step">Donc $\E[\text{MSE train}] = \frac1N\sigma^2(N-p) = \sigma^2(1-\frac pN)$ : en dessous du bruit $\sigma^2$, alors qu'aucun prédicteur ne peut faire mieux que $\sigma^2$ sur de nouvelles données.</div>
+<div class="qed">∎</div>
+</div></details>
+</div>
+
+<h3 id="evaluation">Estimer l'erreur de généralisation avec des données indépendantes</h3>
+<div class="sources"><a class="src slides" href="../Slides/5-model-selection.pdf#page=9" target="_blank">Slides p.9</a></div>
+<div class="box thm"><div class="box-title">Évaluation sur des données indépendantes</div>
+Soient $S\sim P^N$ et $S_{\text{eval}}\sim P^m$ <b>indépendants</b>, et $\hat f = A(S)$. L'erreur d'évaluation $\hL_{\text{eval}}(\hat f) = \frac1m\sum_{(x,y)\in S_{\text{eval}}}\ell(y,\hat f(x))$ vérifie
+$$\E_{S,S_{\text{eval}}}\big[\hL_{\text{eval}}(A(S))\big] = \E_S\big[L(A(S))\big].$$
+Une évaluation donnée peut quand même s'écarter de $L(\hat f)$ car $m$ est fini (écart-type $\propto1/\sqrt m$). Pour une évaluation sans biais, les données d'évaluation <b>ne doivent avoir servi ni à entraîner ni à choisir</b> le modèle.
+</div>
+<details class="proof"><summary>Preuve — sans biais, et variance en $1/m$</summary>
+<div class="proof-body">
+<div class="step"><b>Conditionner par $S$.</b> Une fois $S$ fixé, $\hat f$ est une fonction fixée, et $S_{\text{eval}}$ est indépendant de $S$ donc de $\hat f$. Par la preuve « $f$ fixé » : $\E\big[\hL_{\text{eval}}(\hat f)\mid S\big] = L(\hat f)$.</div>
+<div class="step"><b>Moyenner sur $S$</b> (tower property) : $\E_{S,S_{\text{eval}}}[\hL_{\text{eval}}(\hat f)] = \E_S\big[\E[\hL_{\text{eval}}(\hat f)\mid S]\big] = \E_S[L(\hat f)]$.</div>
+<div class="step"><span class="src extra">Hors slides</span> <b>Précision</b> : sachant $S$, $\hL_{\text{eval}}$ est une moyenne de $m$ pertes i.i.d., donc $\Var(\hL_{\text{eval}}\mid S) = \frac{\Var(\ell)}{m}$. Écart-type $\propto\frac1{\sqrt m}$ : pour diviser l'incertitude par 2, il faut 4 fois plus de données d'évaluation.</div>
+<div class="qed">∎</div>
+</div></details>
+<div data-scene="ms-eval"></div>
+
+<!-- ===================================================================== -->
+<h2 id="complexity"><span class="num">3</span>Complexité, sous- et sur-apprentissage</h2>
+<div class="sources"><a class="src slides" href="../Slides/5-model-selection.pdf#page=11" target="_blank">Slides p.11–13</a><a class="src book" href="../Textbooks/Pattern%20Recognition%20and%20Machine%20Learning.pdf#page=28" target="_blank">PRML Fig. 1.5 p.8</a></div>
+<div class="vids"><div class="vids-title">▶ Vidéos<span>en anglais · s'ouvrent sur YouTube</span></div><div class="vids-grid"><a class="vid" href="https://www.youtube.com/watch?v=EQWr3GGCdzw" target="_blank" rel="noopener"><span class="vid-thumb">▶<img src="https://i.ytimg.com/vi/EQWr3GGCdzw/mqdefault.jpg" loading="lazy" alt="" onerror="this.remove()"></span><span class="vid-body"><span class="vid-ch">Caltech — Yaser Abu-Mostafa</span><span class="vid-t" style="display:block">Lecture 11 - Overfitting</span><span class="vid-why" style="display:block">Ce qu'est vraiment le sur-apprentissage : ajuster le bruit, rôle de N et de la complexité (cours au tableau).</span></span></a><a class="vid" href="https://www.youtube.com/watch?v=EuBBz3bI-aA" target="_blank" rel="noopener"><span class="vid-thumb">▶<img src="https://i.ytimg.com/vi/EuBBz3bI-aA/mqdefault.jpg" loading="lazy" alt="" onerror="this.remove()"></span><span class="vid-body"><span class="vid-ch">StatQuest</span><span class="vid-t" style="display:block">Machine Learning Fundamentals: Bias and Variance</span><span class="vid-why" style="display:block">Sous- et sur-apprentissage vus comme biais et variance, en 6 minutes, sans équations.</span></span></a></div></div>
+<div class="box def"><div class="box-title">Sous-apprentissage / sur-apprentissage</div>
+<b>Sous-apprentissage</b> (<em>underfitting</em>) : le modèle ajusté manque une structure importante des données (degré 1 trop rigide pour une fonction non linéaire).<br>
+<b>Sur-apprentissage</b> (<em>overfitting</em>) : le modèle s'adapte aux fluctuations propres à l'échantillon et fait moins bien sur de nouvelles données (degré 12 : erreur d'entraînement plus basse, prédictions sensibles à l'échantillon particulier).<br>
+Le sur-apprentissage ne dépend pas que de la complexité du modèle, mais aussi de la <b>quantité de données</b> et de la <b>régularisation</b>.
+</div>
+<p>La courbe classique : l'erreur d'entraînement <b>ne peut que baisser</b> quand le degré augmente (classes emboîtées), l'erreur de généralisation descend puis remonte. Change $N$ : avec beaucoup plus de données ($N = 200$), le même degré 12 ne sur-apprend presque plus (slide 13).</p>
+<div data-scene="ms-complexity"></div>
+<details class="proof"><summary>Preuve — classes emboîtées : l'erreur d'entraînement minimale décroît avec $d$ (slide 11)</summary>
+<div class="proof-body">
+<div class="step">Un polynôme de degré $\le d$ est aussi un polynôme de degré $\le d+1$ (coefficient $w_{d+1} = 0$) : $\mathcal H_d\subseteq\mathcal H_{d+1}$.</div>
+<div class="step">Minimiser sur un ensemble plus grand donne un minimum plus petit ou égal : $\min_{f\in\mathcal H_{d+1}}\hL_S(f)\le\min_{f\in\mathcal H_d}\hL_S(f)$.</div>
+<div class="step">Rien de tel pour $L$ : $\hat f_{d+1}$ est choisi pour coller à $S$, pas pour minimiser $L$. Son erreur de généralisation peut augmenter.</div>
+<div class="qed">∎</div>
+</div></details>
+
+<div class="extra-block">
+<h3 id="learning-curves">Courbes d'apprentissage <span class="src extra">Hors slides</span> <a class="src book" href="../Textbooks/Deep%20Learning%20-%20Foundations%20and%20Concepts.pdf#page=283" target="_blank">DL §9.3</a></h3>
+<p>Autre façon de lire le rôle de $N$ : fixer le degré et tracer erreurs d'entraînement et de généralisation <b>en fonction de $N$</b> (moyennées sur de nombreux tirages). Les deux courbes convergent vers la même limite — l'erreur du meilleur modèle de la classe. Modèle simple : elles se rejoignent vite mais <b>haut</b> (biais). Modèle complexe : elles finissent plus bas, mais il faut beaucoup de données pour fermer l'écart (variance).</p>
+<div data-scene="ms-learning"></div>
+</div>
+
+<h3 id="regularization">La régularisation contrôle le modèle ajusté</h3>
+<div class="sources"><a class="src slides" href="../Slides/5-model-selection.pdf#page=14" target="_blank">Slides p.14–15</a><a class="src slides" href="linear-regression.html#ridge">Ridge, chapitre 1</a></div>
+<div class="box def"><div class="box-title">Minimisation du risque empirique régularisé</div>
+$$\hat\bw_\lambda\in\argmin_\bw\Big\{\hL_{\text{train}}(f_\bw) + \lambda\,\Omega(\bw)\Big\},\qquad\lambda\ge0.$$
+Ridge : $\Omega(\bw) = \|\bw\|^2$ (en général <b>sans</b> l'ordonnée à l'origine $w_0$). $\lambda$ grand : régularisation forte, coefficients petits, risque de manquer des motifs utiles (sous-apprentissage). $\lambda$ petit : ajustement plus fidèle aux données… et au bruit (sur-apprentissage). Pour la SVM, $\frac12\|\bw\|^2 + C\sum_i\ell_i$ : un $C$ <b>plus grand</b> met plus de poids sur l'ajustement aux données (c'est l'inverse de $\lambda$).
+</div>
+<details class="objs" open><summary>Les objets en jeu</summary><dl>
+<dt>$\Omega(\bw)$</dt><dd><span class="ty">pénalité $\ge0$</span>Mesure de « complexité » des paramètres : $\|\bw\|^2$ (ridge), $\|\bw\|_1$ (lasso)…</dd>
+<dt>$\lambda$</dt><dd><span class="ty">hyperparamètre</span>Règle le compromis ajustement / simplicité. Il ne peut pas être choisi en minimisant l'erreur d'entraînement (on prendrait toujours $\lambda = 0$) — ni avec la courbe de population, inconnue. <em>Quelles données doivent guider ce choix ?</em> → section suivante.</dd>
+</dl></details>
+<p>Degré fixé à 12, $\lambda$ variable : la courbe de généralisation est en U en fonction de $\lambda$ (slide 15).</p>
+<div data-scene="ms-ridge"></div>
+
+<!-- ===================================================================== -->
+<h2 id="selection"><span class="num">4</span>Sélection de modèle et évaluation</h2>
+<div class="sources"><a class="src slides" href="../Slides/5-model-selection.pdf#page=17" target="_blank">Slides p.17–22</a><a class="src book" href="../Textbooks/Pattern%20Recognition%20and%20Machine%20Learning.pdf#page=52" target="_blank">PRML §1.3 p.32</a></div>
+<div class="vids"><div class="vids-title">▶ Vidéos<span>en anglais · s'ouvrent sur YouTube</span></div><div class="vids-grid"><a class="vid" href="https://www.youtube.com/watch?v=Zi-0rlM4RDs" target="_blank" rel="noopener"><span class="vid-thumb">▶<img src="https://i.ytimg.com/vi/Zi-0rlM4RDs/mqdefault.jpg" loading="lazy" alt="" onerror="this.remove()"></span><span class="vid-body"><span class="vid-ch">deeplizard</span><span class="vid-t" style="display:block">Train, Test, & Validation Sets explained</span><span class="vid-why" style="display:block">Le rôle de chacun des trois ensembles, en quelques minutes.</span></span></a><a class="vid" href="https://www.youtube.com/watch?v=o7zzaKd0Lkk" target="_blank" rel="noopener"><span class="vid-thumb">▶<img src="https://i.ytimg.com/vi/o7zzaKd0Lkk/mqdefault.jpg" loading="lazy" alt="" onerror="this.remove()"></span><span class="vid-body"><span class="vid-ch">Caltech — Yaser Abu-Mostafa</span><span class="vid-t" style="display:block">Lecture 13 - Validation</span><span class="vid-why" style="display:block">Pourquoi l'erreur de validation est sans biais, puis optimiste dès qu'on s'en sert pour choisir ; introduit aussi la validation croisée.</span></span></a></div></div>
+
+<h3 id="hyper">Paramètres et hyperparamètres</h3>
+<table class="hw-table" style="margin:12px 0 18px">
+<thead><tr><th>Modèle</th><th>Paramètres (appris par l'entraînement)</th><th>Hyperparamètres (choisis par la sélection)</th></tr></thead>
+<tbody>
+<tr><td>Régression polynomiale</td><td>coefficients $\bw$</td><td>degré $d$</td></tr>
+<tr><td>Ridge</td><td>coefficients $\bw$</td><td>pénalité $\lambda$</td></tr>
+<tr><td>SVM</td><td>$\bw, b$ ou coefficients duaux $\boldsymbol\alpha$</td><td>$C$, noyau, largeur $\sigma$ du noyau</td></tr>
+</tbody></table>
+<details class="objs" open><summary>Les objets en jeu</summary><dl>
+<dt>paramètres</dt><dd><span class="ty">ajustés par $A$</span>Ce que l'entraînement calcule pour un modèle et une procédure donnés (le $\bw$ des moindres carrés, les $\alpha_i$ du dual…).</dd>
+<dt>$\psi\in\Psi$</dt><dd><span class="ty">hyperparamètre, ensemble de candidats</span>Ce qui définit la classe de modèles, la régularisation ou la procédure ($\psi = d$, $\lambda$, $(C,\sigma)$…). $\Psi$ est la liste finie de candidats qu'on compare.</dd>
+<dt>$\hat f_\psi$</dt><dd><span class="ty">prédicteur</span>Le modèle entraîné avec l'hyperparamètre $\psi$ : $\hat f_\psi = \mathrm{Train}(S_{\text{train}};\psi)$.</dd>
+</dl></details>
+<p>Les hyperparamètres sont aussi choisis à partir de données — <b>donc leur sélection peut, elle aussi, sur-apprendre</b>.</p>
+
+<h3 id="validation">Sélection par un ensemble de validation</h3>
+<div class="box def"><div class="box-title">Ajuster chaque candidat, puis sélectionner</div>
+$$\hat f_\psi = \mathrm{Train}(S_{\text{train}};\psi),\qquad \hat\psi\in\argmin_{\psi\in\Psi}\hL_{\text{val}}(\hat f_\psi).$$
+$S_{\text{train}}$ et $S_{\text{val}}$ sont indépendants ; tous les candidats sont ajustés sur l'entraînement et comparés sur la validation avec une même métrique.
+</div>
+<p><b>Peut-on publier l'erreur de validation du modèle choisi comme évaluation finale ?</b> Non : elle sous-estime l'erreur de généralisation, parce que le modèle a été <em>choisi</em> avec ces mêmes données de validation.</p>
+<div data-scene="ms-valselect"></div>
+
+<h3 id="val-overfit">Sur-apprendre l'ensemble de validation</h3>
+<div class="sources"><a class="src slides" href="../Slides/5-model-selection.pdf#page=19" target="_blank">Slides p.19</a></div>
+<p>Simulation des slides : 100 candidats <b>tous aussi bons</b> (vraie erreur 20 %), évalués chacun sur 100 exemples de validation. Le hasard seul fait apparaître un « meilleur » candidat à ~11 %. Un modèle peut être choisi parce qu'il a eu de la chance sur la validation — il faut des données <b>fraîches</b> pour l'évaluation finale.</p>
+<div data-scene="ms-valoverfit"></div>
+<details class="proof"><summary>Preuve — le minimum des erreurs de validation est biaisé vers le bas</summary>
+<div class="proof-body">
+<div class="step">Notons $V_k$ l'erreur de validation du candidat $k$. Pour un candidat fixé, $\E[V_k] = L(\hat f_k)$ (section 2 : sans biais).</div>
+<div class="step">Pour tout $j$ : $\min_kV_k\le V_j$. En prenant l'espérance : $\E[\min_kV_k]\le\E[V_j] = L(\hat f_j)$, pour tout $j$, donc $\E[\min_kV_k]\le\min_jL(\hat f_j)$.</div>
+<div class="step">L'inégalité est stricte dès que les $V_k$ fluctuent : <b>le minimum d'estimations bruitées est en moyenne plus petit que le minimum des vraies valeurs</b>. Plus il y a de candidats (et plus $m$ est petit), plus le biais est fort.</div>
+<div class="qed">∎</div>
+</div></details>
+
+<h3 id="split">Entraînement, validation, test</h3>
+<table class="hw-table" style="margin:12px 0 18px">
+<thead><tr><th>Ensemble</th><th>Rôle</th><th>Ce qu'il détermine</th></tr></thead>
+<tbody>
+<tr><td>Entraînement (<em>training</em>)</td><td>ajuster chaque candidat</td><td>les paramètres</td></tr>
+<tr><td>Validation</td><td>comparer les candidats</td><td>le modèle / les hyperparamètres</td></tr>
+<tr><td>Test</td><td>évaluer le modèle final</td><td>la performance publiée</td></tr>
+</tbody></table>
+<ul>
+<li>Mettre le test <b>de côté avant</b> d'ajuster ou de sélectionner quoi que ce soit.</li>
+<li>La validation peut guider le développement du modèle, dont le choix des hyperparamètres.</li>
+<li>Régler sur le test puis publier son score comme évaluation indépendante, c'est <b>« tricher »</b>. Ce qui compte est <em>l'usage</em> des données, pas le nom du fichier.</li>
+</ul>
+
+<div class="box thm"><div class="box-title">La procédure complète (slide 22)</div>
+$$\text{Ajuster : }\hat f_\psi = \mathrm{Train}(S_{\text{train}};\psi)\ \ \to\ \ \text{Sélectionner : }\hat\psi\in\argmin_\psi\hL_{\text{val}}(\hat f_\psi)\ \ \to\ \ \text{Réajuster (option) : }f_{\text{final}} = \mathrm{Train}(S_{\text{train}}\cup S_{\text{val}};\hat\psi)\ \ \to\ \ \text{Évaluer : }\hL_{\text{test}}(f_{\text{final}}).$$
+Fixer les hyperparamètres et la procédure de réajustement <b>avant</b> de regarder le test. Sans réajustement, $f_{\text{final}} = \hat f_{\hat\psi}$.
+</div>
+<div class="flow">
+<div class="st"><b>Train</b>ajuster chaque $\psi\in\Psi$</div><div class="ar">→</div>
+<div class="st"><b>Validation</b>choisir $\hat\psi$</div><div class="ar">→</div>
+<div class="st"><b>Réajuster</b>(option) sur train ∪ val</div><div class="ar">→</div>
+<div class="st goal"><b>Test</b>une seule fois, à la fin</div>
+</div>
+<p>L'exemple de la slide 21 est exactement ce que fait la scène de validation ci-dessus : 24 exemples d'entraînement, 100 de validation, degré choisi par la MSE de validation, réajustement sur les 124, puis MSE sur 1000 exemples de test jamais touchés.</p>
+
+<!-- ===================================================================== -->
+<h2 id="cv"><span class="num">5</span>Validation croisée</h2>
+<div class="sources"><a class="src slides" href="../Slides/5-model-selection.pdf#page=24" target="_blank">Slides p.24–27</a><a class="src book" href="../Textbooks/Pattern%20Recognition%20and%20Machine%20Learning.pdf#page=52" target="_blank">PRML §1.3 (Fig. 1.18)</a></div>
+<div class="vids"><div class="vids-title">▶ Vidéos<span>en anglais · s'ouvrent sur YouTube</span></div><div class="vids-grid"><a class="vid" href="https://www.youtube.com/watch?v=fSytzGwwBVw" target="_blank" rel="noopener"><span class="vid-thumb">▶<img src="https://i.ytimg.com/vi/fSytzGwwBVw/mqdefault.jpg" loading="lazy" alt="" onerror="this.remove()"></span><span class="vid-body"><span class="vid-ch">StatQuest</span><span class="vid-t" style="display:block">Machine Learning Fundamentals: Cross Validation</span><span class="vid-why" style="display:block">Le principe des K plis, très visuel.</span></span></a><a class="vid" href="https://www.youtube.com/watch?v=rjbkWSTjHzM" target="_blank" rel="noopener"><span class="vid-thumb">▶<img src="https://i.ytimg.com/vi/rjbkWSTjHzM/mqdefault.jpg" loading="lazy" alt="" onerror="this.remove()"></span><span class="vid-body"><span class="vid-ch">Stanford Online — Andrew Ng</span><span class="vid-t" style="display:block">Stanford CS229 Lecture 8 - Data Splits, Models &amp; Cross-Validation</span><span class="vid-why" style="display:block">Train / dev / test, holdout, K-fold et leave-one-out, par Andrew Ng.</span></span></a></div></div>
+<p><b>Pourquoi ?</b> Avec peu de données, une grande validation laisse peu d'exemples pour l'entraînement, et une petite validation donne des estimations bruitées. Et le classement des modèles peut changer avec le découpage train/validation. L'idée : <b>faire tourner</b> l'ensemble de validation et moyenner.</p>
+<div class="box def"><div class="box-title">Validation croisée à $K$ plis (<em>K-fold cross-validation</em>)</div>
+On découpe les données de développement $S_{\text{dev}}$ (tout sauf le test) en $K$ plis de même taille $S_1,\dots,S_K$. Pour chaque candidat $\psi$ :
+$$\hL_{\text{CV}}(\psi) = \frac1K\sum_{k=1}^K\hL_{S_k}\big(\hat f_\psi^{(-k)}\big),\qquad\hat f_\psi^{(-k)} = \mathrm{Train}(S_{\text{dev}}\setminus S_k;\psi),\qquad\hat\psi\in\argmin_{\psi\in\Psi}\hL_{\text{CV}}(\psi).$$
+Puis on entraîne <b>un</b> modèle final sur toutes les données de développement, et on l'évalue sur le test intact. Le minimum du score CV sert à sélectionner et peut lui aussi être optimiste.
+</div>
+<details class="objs" open><summary>Les objets en jeu</summary><dl>
+<dt>$S_{\text{dev}}$</dt><dd><span class="ty">données de développement</span>Tout ce qui n'est pas le test. Le test reste en dehors de tous les plis.</dd>
+<dt>$S_k$</dt><dd><span class="ty">$k$-ième pli</span>Sert de validation au tour $k$ ; les $K-1$ autres servent à l'entraînement.</dd>
+<dt>$\hat f_\psi^{(-k)}$</dt><dd><span class="ty">prédicteur</span>Entraîné <b>sans</b> le pli $k$ (« moins $k$ ») avec l'hyperparamètre $\psi$.</dd>
+<dt>$\hL_{\text{CV}}(\psi)$</dt><dd><span class="ty">score de validation croisée</span>Moyenne des $K$ erreurs de validation. Chaque exemple est utilisé <b>une fois</b> en validation et <b>$K-1$ fois</b> en entraînement.</dd>
+<dt>$K$</dt><dd><span class="ty">entier</span>Typiquement 5 ou 10. $K = N$ : <em>leave-one-out</em>. Coût : $K$ entraînements par candidat.</dd>
+</dl></details>
+<p>Dans la scène : les points sont colorés par pli ; choisis le tour $k$ pour voir quel pli sert de validation ; les courbes fines sont les erreurs par pli, la courbe épaisse leur moyenne (le score CV). Bouton « nouveau découpage » : la courbe holdout (un seul découpage) saute beaucoup plus que la courbe CV.</p>
+<div data-scene="ms-cv"></div>
+<p>Pour quantifier la <b>stabilité</b> : on répète 200 découpages aléatoires et on compte quel degré est choisi par une validation simple (holdout) et par la CV à 5 plis. La CV choisit de façon beaucoup plus régulière.</p>
+<div data-scene="ms-cvstab"></div>
+<details class="proof"><summary>Remarque — preprocessing et fuite d'information (slide 25)</summary>
+<div class="proof-body">
+<div class="step">Toute étape qui « apprend » à partir des données (normalisation : moyenne et écart-type ; sélection de features…) fait partie de l'entraînement : elle doit être <b>réajustée dans chaque pli</b>, sur les seuls exemples d'entraînement de ce pli.</div>
+<div class="step">Sinon, des statistiques calculées avec le pli de validation « fuient » dans le modèle : l'erreur de validation devient optimiste, exactement comme quand on évalue sur ses données d'entraînement.</div>
+<div class="qed">∎</div>
+</div></details>
+
+<h3 id="holdout-vs-cv">Validation simple ou validation croisée ?</h3>
+<table class="hw-table" style="margin:12px 0 18px">
+<thead><tr><th></th><th>Validation simple (holdout)</th><th>$K$-fold CV</th></tr></thead>
+<tbody>
+<tr><td>Entraînements par candidat</td><td>1</td><td>$K$</td></tr>
+<tr><td>Exemples de validation</td><td>un sous-ensemble mis de côté</td><td>chaque exemple de développement, une fois</td></tr>
+<tr><td>Usage naturel</td><td>beaucoup de données / entraînement coûteux</td><td>peu de données / réentraînements abordables</td></tr>
+</tbody></table>
+<p>Les deux approches ont besoin d'une <b>évaluation finale indépendante</b> (le test).</p>
+
+<!-- ===================================================================== -->
+<h2 id="summary"><span class="num">6</span>Résumé &amp; question de la slide 28</h2>
+<div class="box intu"><div class="box-title">Apprentissage et évaluation</div>
+But : petite erreur de généralisation $L(f)$ · Entraînement : ajuster les paramètres sur $S_{\text{train}}$ · Sélection : choisir les hyperparamètres par validation ou CV · Évaluation finale : estimer $L(f_{\text{final}})$ sur $S_{\text{test}}$.<br>
+Une faible erreur d'entraînement ne garantit pas de bonnes prédictions. Capacité du modèle, régularisation et taille d'échantillon gouvernent sous- et sur-apprentissage. Le test reste indépendant de <b>toutes</b> les décisions d'entraînement et de sélection.
+</div>
+<div class="box q"><div class="box-title">Pour l'exemple polynomial : quelles données choisissent le degré, lesquelles évaluent le prédicteur final ?</div>
+<details class="proof"><summary>Réponse</summary><div class="proof-body"><p>Le <b>degré</b> (hyperparamètre) est choisi avec les données de <b>validation</b> (ou par validation croisée sur les données de développement) : chaque degré est ajusté sur l'entraînement, comparé sur la validation. Le <b>prédicteur final</b> (éventuellement réajusté sur entraînement + validation) est évalué <b>une seule fois</b> sur le <b>test</b>, mis de côté dès le début et jamais utilisé pour ajuster ni choisir. Utiliser l'erreur de validation du degré choisi comme performance finale serait optimiste (scène « sur-apprendre la validation »).</p></div></details></div>
+<hr>
+<p class="c-dim" style="font-size:13px">Pour s'entraîner : <a href="exercises.html">exercices à trous</a> (filtre « 4 · sélection »).</p>
+
+</div></main>
+</div>
+
+<script src="lib/katex/katex.min.js"></script>
+<script src="lib/katex/contrib/auto-render.min.js"></script>
+<script src="lib/three.min.js"></script>
+<script src="js/core/math.js"></script>
+<script src="js/core/plot2d.js"></script>
+<script src="js/core/scene3d.js"></script>
+<script src="js/core/ui.js"></script>
+<script src="js/modelsel/m0-common.js"></script>
+<script src="js/modelsel/m1-generalization.js"></script>
+<script src="js/modelsel/m2-selection.js"></script>
+<script>ML.page.boot();</script>
+</body>
+</html>
