@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Entraînement — Cours interactif ML</title>
+<link rel="stylesheet" href="lib/katex/katex.min.css">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="index.html"><span class="pi">∇</span>ML · POSTECH</a>
+  <nav>
+    <a href="index.html">Accueil</a>
+    <a href="linear-regression.html">1 · Régression linéaire</a>
+    <a href="logistic-regression.html">2 · Régression logistique</a>
+    <a href="svm.html">3 · SVM</a>
+    <a href="exercises.html" class="active">Entraînement</a>
+    <a class="local-only" href="homework.html">Devoirs</a>
+  </nav>
+</header>
+
+<div class="ex-page">
+  <h1>Entraînement<span class="sub">Textes à trous : définitions, dérivations, calculs — dans le style des devoirs</span></h1>
+  <div class="ex-intro">
+    <p>Chaque exercice contient des trous <span class="blank-lbl">(a)</span>, <span class="blank-lbl">(b)</span>… à remplir dans les champs dessous. Tu peux taper les formules en LaTeX (<code>\lambda</code>, <code>\frac{2}{N}</code>, <code>\Phi^\top</code>) ou en texte simple (<code>2/N</code>, <code>Phi^T</code>, <code>λ</code>, <code>(X^TX)^-1</code>) : un aperçu s'affiche à droite. La vérification automatique est tolérante (espaces, gras, notations de transposée, lettres grecques) mais pas infaillible : en cas de doute, compare avec la <b>correction</b>, qui donne toujours la réponse et l'explication. Les calculs <b>🎲</b> tirent de nouvelles valeurs à chaque fois. Rien n'est sauvegardé.</p>
+  </div>
+  <div class="ex-toolbar">
+    <div class="grp"><span>Chapitre</span>
+      <button class="btn on" data-f="ch:all">tous</button><button class="btn" data-f="ch:1">1 · linéaire</button><button class="btn" data-f="ch:2">2 · logistique</button><button class="btn" data-f="ch:3">3 · SVM</button>
+    </div>
+    <div class="grp"><span>Type</span>
+      <button class="btn on" data-f="type:all">tous</button><button class="btn" data-f="type:def">définitions</button><button class="btn" data-f="type:deriv">dérivations</button><button class="btn" data-f="type:calc">calculs</button>
+    </div>
+    <div class="grp"><button class="btn primary" id="ex-shuffle">🎲 ordre aléatoire</button><button class="btn" id="ex-reset">ordre du cours</button></div>
+    <span id="ex-count"></span>
+    <span id="ex-score"></span>
+  </div>
+  <div id="ex-list"></div>
+</div>
+
+<script src="lib/katex/katex.min.js"></script>
+<script src="lib/katex/contrib/auto-render.min.js"></script>
+<script src="js/core/math.js"></script>
+<script src="js/core/ui.js"></script>
+<script src="js/exercises/engine.js"></script>
+<script src="js/exercises/data-ch1.js"></script>
+<script src="js/exercises/data-ch2.js"></script>
+<script src="js/exercises/data-ch3.js"></script>
+<script>ML.EX.boot();</script>
+</body>
+</html>

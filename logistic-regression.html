@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Régression logistique — Cours interactif ML</title>
+<link rel="stylesheet" href="lib/katex/katex.min.css">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <a class="brand" href="index.html"><span class="pi">∇</span>ML · POSTECH</a>
+  <nav>
+    <a href="index.html">Accueil</a>
+    <a href="linear-regression.html">1 · Régression linéaire</a>
+    <a href="logistic-regression.html" class="active">2 · Régression logistique</a>
+    <a href="svm.html">3 · SVM</a>
+    <a href="exercises.html">Entraînement</a>
+    <a class="local-only" href="homework.html">Devoirs</a>
+  </nav>
+</header>
+
+<div class="layout">
+<aside class="sidebar">
+  <h4>Sommaire</h4>
+  <div class="toc"></div>
+  <div class="legend">
+    <h4>Sources</h4>
+    <div><span class="src slides">Slides</span> au programme (slides du cours)</div>
+    <div><span class="src book">PRML / DL</span> manuel de référence (lien → page)</div>
+    <div><span class="src extra">Hors slides</span> complément, pas dans les slides</div>
+    <div><span class="src hw">HW2</span> lié au devoir</div>
+  </div>
+</aside>
+
+<main class="content"><div class="content-inner">
+
+<h1>Régression logistique<span class="sub">Logistic Regression for Classification — Advanced Optimization · Cours 4 &amp; 5 (9/17, 9/22)</span></h1>
+<div class="sources">
+  <a class="src slides" href="../Slides/3-logistic-regression.pdf" target="_blank">Slides 3-logistic-regression (35 p.)</a>
+  <a class="src book" href="../Textbooks/Pattern%20Recognition%20and%20Machine%20Learning.pdf#page=223" target="_blank">PRML §4.3 p.203–212</a>
+  <a class="src book" href="../Textbooks/Deep%20Learning%20-%20Foundations%20and%20Concepts.pdf#page=176" target="_blank">DL §5.4 p.156–163</a>
+  <a class="src book" href="../Textbooks/Pattern%20Recognition%20and%20Machine%20Learning.pdf#page=216" target="_blank">PRML §4.2 (modèles génératifs)</a>
+</div>
+
+<p>Plan des slides : <strong>(1) le problème</strong> — la classification ; <strong>(2) la classe de modèles</strong> — régression logistique et perte d'entropie croisée (<em>cross-entropy</em>) ; <strong>(3) l'algorithme</strong> — méthodes de gradient et méthode de Newton. Idée directrice : on garde un score <em>linéaire</em> $\bw\T\bx$ comme au chapitre 1, mais on le transforme en <strong>probabilité</strong> avec la sigmoïde, et on apprend par maximum de vraisemblance.</p>
+
+<!-- ===================================================================== -->
+<h2 id="classif"><span class="num">1</span>Le problème de classification</h2>
+<div class="sources">
+  <a class="src slides" href="../Slides/3-logistic-regression.pdf#page=3" target="_blank">Slides p.3–6</a>
+  <a class="src book" href="../Textbooks/Pattern%20Recognition%20and%20Machine%20Learning.pdf#page=59" target="_blank">PRML §1.5.1 p.39</a>
+</div>
+
+<div class="box def"><div class="box-title">Objectif — classification supervisée hors-ligne</div>
+Trouver un classifieur $h:\mathcal X\to\mathcal Y$ dont la prédiction $h(x)$ coïncide avec la vraie étiquette $y$ :
+$$\min_{h\in\mathcal F}\ \E_{(x,y)\sim\mathcal D}\ \mathbb 1\big(h(x)\ne y\big).$$
+Les exemples d'entraînement sont supposés i.i.d. selon $\mathcal D$. Exemples : reconnaissance d'écriture, de parole, filtrage de spam, prédiction du prochain token (un LLM est un classifieur à ~100 000 classes !).
+</div>
+<details class="objs" open><summary>Les objets en jeu</summary><dl>
+<dt>$\mathcal X$</dt><dd><span class="ty">ensemble</span>L'ensemble des <b>exemples</b> possibles (entrées) : ex. $\R^D$ pour des vecteurs de features, les e-mails pour le spam.</dd>
+<dt>$\mathcal Y$</dt><dd><span class="ty">ensemble fini</span>L'ensemble des <b>étiquettes</b> (<em>labels</em>, classes). Binaire : $\{0,1\}$ ou $\{-1,+1\}$ (les deux conventions apparaissent dans les slides) ; multiclasse : $\{1,\dots,K\}$.</dd>
+<dt>$\mathcal D$</dt><dd><span class="ty">loi sur $\mathcal X\times\mathcal Y$</span>La vraie loi (inconnue) des couples (exemple, étiquette) — l'analogue de $p(x,y)$ du chapitre 1, mais $y$ est maintenant discret : $\mathcal D$ = « loi marginale $p(x)$ » × « probabilités de classes $P(y\mid x)$ ».</dd>
+<dt>$h$</dt><dd><span class="ty">fonction $\mathcal X\to\mathcal Y$</span>Le <b>classifieur</b> (hypothèse) : il rend une classe, pas un nombre réel.</dd>
+<dt>$\mathcal F$</dt><dd><span class="ty">ensemble de fonctions</span>La <b>classe d'hypothèses</b> dans laquelle on cherche $h$ (ex. tous les classifieurs linéaires). Question des slides p.6 : <em>How should we define $\mathcal F$?</em></dd>
+<dt>$\mathbb 1(A)$</dt><dd><span class="ty">0 ou 1</span>Indicatrice : vaut 1 si l'événement $A$ est vrai, 0 sinon. $\mathbb 1(h(x)\ne y)$ = « perte 0-1 » d'un exemple.</dd>
+<dt>$\E\,\mathbb 1(h(x)\ne y)$</dt><dd><span class="ty">nombre dans $[0,1]$</span>$= P_{\mathcal D}(h(x)\ne y)$ : le <b>taux d'erreur</b> (vrai risque 0-1) de $h$. L'espérance d'une indicatrice est une probabilité.</dd>
+</dl></details>
+
+<p><strong>Pourquoi ne pas minimiser directement l'erreur ?</strong> La perte 0-1 est une fonction en escalier des paramètres : son gradient est nul presque partout (et infini aux sauts) — impossible à optimiser par descente de gradient, et le problème est NP-difficile en général. Toute la suite du chapitre consiste à remplacer $\mathbb 1$ par une <strong>perte de substitution</strong> (<em>surrogate</em>) lisse et convexe.</p>
+
+<div class="extra-block">
+<h3 id="bayes">D'où vient la sigmoïde ? Le point de vue génératif <span class="src extra">Hors slides</span> <a class="src book" href="../Textbooks/Pattern%20Recognition%20and%20Machine%20Learning.pdf#page=216" target="_blank">PRML §4.2 p.196–200</a></h3>
+<p>Le meilleur classifieur possible (classifieur de Bayes) prédit la classe la plus probable : $h^*(x) = \argmax_k P(y = k\mid x)$ (PRML §1.5.1). Supposons que chaque classe produise ses exemples selon une gaussienne, <em>de même covariance</em> $\bSigma$ : $p(\bx\mid y=k) = \N(\bx\mid\bmu_k,\bSigma)$, avec probabilités a priori $\pi_k$. Alors par Bayes :</p>
+$$P(y=1\mid\bx) = \frac{\pi_1\N(\bx|\bmu_1,\bSigma)}{\pi_1\N(\bx|\bmu_1,\bSigma)+\pi_0\N(\bx|\bmu_0,\bSigma)} = \sigma\big(a(\bx)\big),\qquad a(\bx) = \ln\frac{\pi_1\N(\bx|\bmu_1,\bSigma)}{\pi_0\N(\bx|\bmu_0,\bSigma)} = \bw\T\bx + b,$$
+<p>avec $\bw = \bSigma^{-1}(\bmu_1-\bmu_0)$ : les termes quadratiques $\bx\T\bSigma^{-1}\bx$ <strong>se simplifient</strong> dans le rapport. Le log-rapport des probabilités (<em>log-odds</em>) est <strong>exactement linéaire</strong>, et la probabilité a posteriori est <strong>exactement une sigmoïde d'une fonction linéaire</strong>. La régression logistique modélise directement cette forme sans supposer les gaussiennes (approche <em>discriminative</em>). Si les covariances diffèrent, les termes quadratiques ne s'annulent plus : frontière courbe.</p>
+<div data-scene="lg-bayes"></div>
+<details class="proof"><summary>Preuve — le log-odds de deux gaussiennes de même covariance est affine</summary>
+<div class="proof-body">
+<div class="step">$\ln\N(\bx|\bmu,\bSigma) = -\frac12(\bx-\bmu)\T\bSigma^{-1}(\bx-\bmu) + c$ où $c = -\frac D2\ln 2\pi - \frac12\ln|\bSigma|$ ne dépend pas de la classe.</div>
+<div class="step">Développons : $-\frac12\bx\T\bSigma^{-1}\bx + \bmu\T\bSigma^{-1}\bx - \frac12\bmu\T\bSigma^{-1}\bmu + c$.</div>
+<div class="step">Dans $a(\bx) = \ln\pi_1 + \ln\N(\bx|\bmu_1,\bSigma) - \ln\pi_0 - \ln\N(\bx|\bmu_0,\bSigma)$, les termes $-\frac12\bx\T\bSigma^{-1}\bx$ et $c$ apparaissent avec des signes opposés et s'annulent.</div>
+<div class="step">Il reste $a(\bx) = (\bmu_1-\bmu_0)\T\bSigma^{-1}\bx\ -\ \frac12\bmu_1\T\bSigma^{-1}\bmu_1 + \frac12\bmu_0\T\bSigma^{-1}\bmu_0 + \ln\frac{\pi_1}{\pi_0}$, de la forme $\bw\T\bx + b$.</div>
+<div class="step">Enfin $\frac{A}{A+B} = \frac{1}{1+B/A} = \frac1{1+e^{-\ln(A/B)}} = \sigma(\ln\frac AB)$ : la probabilité a posteriori est $\sigma(a(\bx))$.</div>
+<div class="qed">∎</div>
+</div></details>
+</div>
+
+<!-- ===================================================================== -->
+<h2 id="lsclass"><span class="num">2</span>Pourquoi pas les moindres carrés ?</h2>
+<div class="sources">
+  <a class="src slides" href="../Slides/3-logistic-regression.pdf#page=8" target="_blank">Slides p.8</a>
+  <a class="src book" href="../Textbooks/Pattern%20Recognition%20and%20Machine%20Learning.pdf#page=204" target="_blank">PRML §4.1.3 p.184–186 (Fig. 4.4)</a>
+</div>
+<p><strong>Extension directe</strong> : coder les classes $y_n\in\{-1,+1\}$, ajuster $f_{\bw}(\bx) = \bw\T\bx$ par moindres carrés, prédire $\operatorname{sign}(f_{\bw}(\bx))$.</p>
+<div class="box def"><div class="box-title">Marge fonctionnelle (<em>margin</em>)</div>
+$$m := y\,f_{\bw}(\bx).\qquad m>0 \iff \text{bien classé};\quad |m| \text{ grand} \iff \text{confiant}.$$
+Avec $y\in\{-1,+1\}$ : $(y - f)^2 = y^2(1 - yf)^2 = (1-m)^2$ car $y^2 = 1$. La perte carrée ne dépend que de la marge.
+</div>
+<details class="objs" open><summary>Les objets en jeu</summary><dl>
+<dt>$f_{\bw}(\bx) = \bw\T\bx$</dt><dd><span class="ty">réel</span>Le <b>score</b> linéaire. Son <em>signe</em> donne la classe, sa <em>valeur absolue</em> une mesure de confiance.</dd>
+<dt>$m = y f_{\bw}(\bx)$</dt><dd><span class="ty">réel</span>La marge (fonctionnelle) de l'exemple : positive si le score a le bon signe. À ne pas confondre avec la marge <em>géométrique</em> du chapitre SVM ($m/\|\bw\|$).</dd>
+<dt>$(1-m)^2$</dt><dd><span class="ty">perte ≥ 0</span>La perte carrée vue comme fonction de la marge : une parabole de minimum en $m = 1$.</dd>
+</dl></details>
+<p><strong>Le problème</strong> (slide 8) : la parabole $(1-m)^2$ <em>remonte</em> pour $m>1$. Un point très bien classé ($m = 5$) est pénalisé comme un point mal classé ($m = -3$) ! Les moindres carrés « tirent » la frontière vers ces points trop corrects, au détriment des autres. Dans la scène, clique « + points très corrects » : la frontière des moindres carrés (bleue) bascule et se met à faire des erreurs, la logistique (jaune) ne bouge presque pas.</p>
+<div data-scene="lg-lsclass"></div>
+
+<!-- ===================================================================== -->
+<h2 id="sigmoid"><span class="num">3</span>La fonction logistique (sigmoïde)</h2>
+<div class="sources"><a class="src slides" href="../Slides/3-logistic-regression.pdf#page=9" target="_blank">Slides p.9</a><a class="src book" href="../Textbooks/Pattern%20Recognition%20and%20Machine%20Learning.pdf#page=217" target="_blank">PRML éq. 4.59–4.61 p.197</a></div>
+<div class="vids"><div class="vids-title">▶ Vidéos<span>en anglais · s'ouvrent sur YouTube</span></div><div class="vids-grid"><a class="vid" href="https://www.youtube.com/watch?v=ARfXDSkQf1Y" target="_blank" rel="noopener"><span class="vid-thumb">▶<img src="https://i.ytimg.com/vi/ARfXDSkQf1Y/mqdefault.jpg" loading="lazy" alt="" onerror="this.remove()"></span><span class="vid-body"><span class="vid-ch">StatQuest</span><span class="vid-t" style="display:block">Odds and Log(Odds), Clearly Explained!!!</span><span class="vid-why" style="display:block">Cotes et log-cotes : pourquoi le logit parcourt tout $\R$.</span></span></a></div></div>
+
+<div class="box def"><div class="box-title">Fonction logistique</div>
+$$\sigma(t) = \frac{1}{1+e^{-t}},\qquad \sigma:\R\to(0,1).$$
+<ul>
+<li>$\sigma(t)\to0$ quand $t\to-\infty$, $\ \sigma(t)\to1$ quand $t\to+\infty$ ;</li>
+<li>symétrie : $\sigma(-t) = 1-\sigma(t)$ ;</li>
+<li>inverse (<em>logit</em>) : $\sigma^{-1}(p) = \ln\frac{p}{1-p}$ pour $p\in(0,1)$ ;</li>
+<li>dérivée : $\frac{d}{dt}\sigma(t) = \sigma(t)\sigma(-t) = \sigma(t)(1-\sigma(t))$.</li>
+</ul></div>
+<details class="objs" open><summary>Les objets en jeu</summary><dl>
+<dt>$t$</dt><dd><span class="ty">réel</span>Un score quelconque, typiquement $t = \bw\T\bx$. Aussi appelé <em>activation</em> ou <em>logit</em>.</dd>
+<dt>$\sigma(t)$</dt><dd><span class="ty">probabilité $\in(0,1)$</span>« Écrase » tout $\R$ dans $(0,1)$ de façon lisse et croissante. $\sigma(0) = \frac12$.</dd>
+<dt>$\frac{p}{1-p}$</dt><dd><span class="ty">réel $>0$</span>La <b>cote</b> (<em>odds</em>) : « combien de fois plus probable que l'inverse ». $p = 0.8$ ⇒ cote 4 (« 4 contre 1 »).</dd>
+<dt>$\ln\frac{p}{1-p}$</dt><dd><span class="ty">réel</span>Le <b>log-odds</b> ou <b>logit</b>, qui parcourt tout $\R$ quand $p$ parcourt $(0,1)$ : c'est pourquoi on peut le modéliser par une fonction linéaire.</dd>
+</dl></details>
+<div data-scene="lg-sigmoid"></div>
+<details class="proof"><summary>Preuve — symétrie, logit et dérivée de $\sigma$</summary>
+<div class="proof-body">
+<div class="step"><b>Symétrie.</b> $1-\sigma(t) = \frac{1+e^{-t}-1}{1+e^{-t}} = \frac{e^{-t}}{1+e^{-t}} = \frac{1}{e^{t}+1} = \sigma(-t)$ (on a multiplié haut et bas par $e^t$). Géométriquement : le graphe est symétrique par rapport au point $(0,\frac12)$.</div>
+<div class="step"><b>Logit.</b> $p = \frac1{1+e^{-t}} \iff 1+e^{-t} = \frac1p \iff e^{-t} = \frac{1-p}{p} \iff t = \ln\frac{p}{1-p}$.</div>
+<div class="step"><b>Dérivée.</b> $\sigma'(t) = \frac{d}{dt}(1+e^{-t})^{-1} = \frac{e^{-t}}{(1+e^{-t})^2} = \underbrace{\frac1{1+e^{-t}}}_{\sigma(t)}\cdot\underbrace{\frac{e^{-t}}{1+e^{-t}}}_{\sigma(-t) = 1-\sigma(t)}$.</div>
+<div class="step">Conséquence : $\sigma'$ est maximale en $t=0$ où elle vaut $\frac12\cdot\frac12 = \frac14$ (slide p.9 : « 1/4 »), et tend vers 0 aux extrémités : la sigmoïde est presque plate pour les grands $|t|$ (saturation).</div>
+<div class="qed">∎</div>
+</div></details>
+
+<!-- ===================================================================== -->
+<h2 id="model"><span class="num">4</span>Le modèle de régression logistique</h2>
+<div class="sources"><a class="src slides" href="../Slides/3-logistic-regression.pdf#page=10" target="_blank">Slides p.10, 12–13</a><a class="src book" href="../Textbooks/Pattern%20Recognition%20and%20Machine%20Learning.pdf#page=225" target="_blank">PRML §4.3.2 p.205</a></div>
+<div class="vids"><div class="vids-title">▶ Vidéos<span>en anglais · s'ouvrent sur YouTube</span></div><div class="vids-grid"><a class="vid" href="https://www.youtube.com/watch?v=yIYKR4sgzI8" target="_blank" rel="noopener"><span class="vid-thumb">▶<img src="https://i.ytimg.com/vi/yIYKR4sgzI8/mqdefault.jpg" loading="lazy" alt="" onerror="this.remove()"></span><span class="vid-body"><span class="vid-ch">StatQuest</span><span class="vid-t" style="display:block">StatQuest: Logistic Regression</span><span class="vid-why" style="display:block">Vue d'ensemble de la régression logistique : la courbe en S et la classification.</span></span></a><a class="vid" href="https://www.youtube.com/watch?v=vN5cNN2-HWE" target="_blank" rel="noopener"><span class="vid-thumb">▶<img src="https://i.ytimg.com/vi/vN5cNN2-HWE/mqdefault.jpg" loading="lazy" alt="" onerror="this.remove()"></span><span class="vid-body"><span class="vid-ch">StatQuest</span><span class="vid-t" style="display:block">Logistic Regression Details Pt1: Coefficients</span><span class="vid-why" style="display:block">Les coefficients comme effets sur le log-odds.</span></span></a></div></div>
+
+<p><strong>Pourquoi « régression » logistique ?</strong> (slide 10). Un modèle linéaire sort une valeur dans $\R$ ; une probabilité vit dans $(0,1)$. Mais le log-odds vit dans $\R$ : on <em>régresse linéairement le log-odds</em>.</p>
+$$\ln\frac{p_{\bw}(\bx)}{1-p_{\bw}(\bx)} = f_{\bw}(\bx)\quad\iff\quad p_{\bw}(\bx) = \sigma\big(f_{\bw}(\bx)\big),\qquad p_{\bw}(\bx) := p(y=+1\mid\bx,\bw).$$
+<div class="box def"><div class="box-title">Modèle de régression logistique (binaire)</div>
+$$\eta(\bx) = \sigma(\bw\T\bx + b) = \sigma(\tilde\bw\T\tilde\bx),\qquad \tilde\bw = [\bw\T, b]\T,\ \tilde\bx = [\bx\T, 1]\T,$$
+$$h(\bx) = \begin{cases}+1 & \text{si } \sigma(\tilde\bw\T\tilde\bx)\ge 0.5\\ -1 & \text{sinon}\end{cases} = \begin{cases}+1 & \text{si } \tilde\bw\T\tilde\bx\ge 0\\ -1&\text{sinon.}\end{cases}$$
+</div>
+<details class="objs" open><summary>Les objets en jeu</summary><dl>
+<dt>$\bx\in\R^D$</dt><dd><span class="ty">vecteur</span>L'entrée (ou ses features $\bphi(\bx)$ : tout le chapitre 1 sur les fonctions de base s'applique, PRML §4.3.1).</dd>
+<dt>$\bw\in\R^D,\ b\in\R$</dt><dd><span class="ty">paramètres</span>Le <b>vecteur de poids</b> (orientation de la frontière) et le <b>biais</b> (<em>bias, intercept</em> : position de la frontière).</dd>
+<dt>$\tilde\bx,\ \tilde\bw\in\R^{D+1}$</dt><dd><span class="ty">vecteurs augmentés</span>Astuce d'écriture : on ajoute une coordonnée constante 1 à $\bx$ et $b$ à $\bw$ pour écrire $\bw\T\bx+b = \tilde\bw\T\tilde\bx$. Les slides réutilisent la même lettre ($\bw$, $\bx$) pour les versions augmentées.</dd>
+<dt>$\eta(\bx) = p_{\bw}(\bx)$</dt><dd><span class="ty">probabilité</span>La probabilité prédite de la classe $+1$ en $\bx$. Le modèle décrit donc toute une <b>loi de Bernoulli</b> $P(y\mid\bx)$ en chaque point.</dd>
+<dt>$h(\bx)$</dt><dd><span class="ty">classe</span>Le classifieur obtenu en seuillant la probabilité à $\frac12$ ⇔ en seuillant le score à 0.</dd>
+<dt>$H$</dt><dd><span class="ty">hyperplan de $\R^D$</span>La <b>frontière de décision</b> $\{\bx : \bw\T\bx + b = 0\}$ : une droite en 2D, un plan en 3D.</dd>
+</dl></details>
+
+<h3 id="geometry">Géométrie de la frontière</h3>
+<div class="sources"><a class="src slides" href="../Slides/3-logistic-regression.pdf#page=13" target="_blank">Slides p.13</a></div>
+<p>Le vecteur $\bw$ est <strong>perpendiculaire</strong> à la frontière $H$ et pointe vers la région $\bw\T\bx+b>0$ (classe $+1$). La quantité $\frac{\bw\T\bx+b}{\|\bw\|}$ est la <strong>distance signée</strong> de $\bx$ à $H$ (prouvé au chapitre SVM). Donc $p_{\bw}(\bx) = \sigma\big(\|\bw\|\cdot\text{distance signée}\big)$ : la probabilité dépend seulement de la distance à la frontière, et <strong>$\|\bw\|$ règle la raideur</strong> de la transition. Multiplier $\bw$ et $b$ par 10 ne change pas la frontière (ni les prédictions), mais rend le modèle 10 fois plus « sûr de lui ». En 3D ci-dessous : la surface $\sigma(\bw\T\bx+b)$ est une « marche » lisse posée sur le plan, orientée selon $\bw$.</p>
+<div data-scene="lg-model3d"></div>
+
+<!-- ===================================================================== -->
+<h2 id="mle"><span class="num">5</span>Apprentissage : maximum de vraisemblance</h2>
+<div class="sources"><a class="src slides" href="../Slides/3-logistic-regression.pdf#page=14" target="_blank">Slides p.14–15</a><a class="src book" href="../Textbooks/Pattern%20Recognition%20and%20Machine%20Learning.pdf#page=225" target="_blank">PRML §4.3.2 éq. 4.89–4.90</a></div>
+<div class="vids"><div class="vids-title">▶ Vidéos<span>en anglais · s'ouvrent sur YouTube</span></div><div class="vids-grid"><a class="vid" href="https://www.youtube.com/watch?v=BfKanl1aSG0" target="_blank" rel="noopener"><span class="vid-thumb">▶<img src="https://i.ytimg.com/vi/BfKanl1aSG0/mqdefault.jpg" loading="lazy" alt="" onerror="this.remove()"></span><span class="vid-body"><span class="vid-ch">StatQuest</span><span class="vid-t" style="display:block">Logistic Regression Details Pt 2: Maximum Likelihood</span><span class="vid-why" style="display:block">Comment on ajuste la courbe en S par maximum de vraisemblance.</span></span></a><a class="vid" href="https://www.youtube.com/watch?v=het9HFqo1TQ" target="_blank" rel="noopener"><span class="vid-thumb">▶<img src="https://i.ytimg.com/vi/het9HFqo1TQ/mqdefault.jpg" loading="lazy" alt="" onerror="this.remove()"></span><span class="vid-body"><span class="vid-ch">Stanford CS229 — Andrew Ng</span><span class="vid-t" style="display:block">Lecture 3: Locally Weighted &amp; Logistic Regression</span><span class="vid-why" style="display:block">Cours complet : modèle logistique, vraisemblance, gradient et Newton.</span></span></a></div></div>
+
+<div class="box def"><div class="box-title">Maximisation de la log-vraisemblance</div>
+$$\hat\bw = \argmax_{\bw} p(Z\mid\bw),\qquad p(Z\mid\bw) = \prod_{n=1}^N p(\bx_n,y_n\mid\bw) = \prod_{n=1}^N p(y_n\mid\bx_n,\bw)\,p(\bx_n\mid\bw) = \prod_{n=1}^N p(y_n\mid\bx_n,\bw)\,p(\bx_n).$$
+La dernière égalité suppose que la loi des entrées ne dépend pas de $\bw$ : seul le terme conditionnel compte. Avec $y_n\in\{0,1\}$ et $\hat y_n = \sigma(\bw\T\bx_n)$ :
+$$p(y_n\mid\bx_n,\bw) = \hat y_n^{\,y_n}(1-\hat y_n)^{1-y_n},\qquad
+\hat\bw = \argmin_{\bw}\ -\sum_{n=1}^N\Big[y_n\ln\hat y_n + (1-y_n)\ln(1-\hat y_n)\Big].$$
+</div>
+<details class="objs" open><summary>Les objets en jeu</summary><dl>
+<dt>$Z$</dt><dd><span class="ty">jeu de données</span>$Z = \{(\bx_n,y_n)\}_{n=1}^N$, i.i.d. selon la vraie loi cachée $\mathcal D$.</dd>
+<dt>$p(Z\mid\bw)$</dt><dd><span class="ty">fonction de $\bw$</span>La vraisemblance du jeu de données complet sous le modèle de paramètre $\bw$ ; l'i.i.d. la factorise en produit.</dd>
+<dt>$p(\bx_n)$</dt><dd><span class="ty">densité des entrées</span>Ne dépend pas de $\bw$ (on modélise seulement $P(y|\bx)$ : modèle <em>discriminatif</em>) ⇒ constante pour l'optimisation.</dd>
+<dt>$\hat y_n = \sigma(\bw\T\bx_n)$</dt><dd><span class="ty">probabilité</span>La probabilité prédite que $y_n = 1$. Attention : ce n'est <b>pas</b> une étiquette mais un nombre dans $(0,1)$.</dd>
+<dt>$\hat y^{\,y}(1-\hat y)^{1-y}$</dt><dd><span class="ty">probabilité de Bernoulli</span>Écriture compacte : vaut $\hat y$ si $y=1$, $1-\hat y$ si $y=0$ (l'exposant « sélectionne » le bon facteur). C'est la probabilité que le modèle attribue à l'étiquette <b>effectivement observée</b>.</dd>
+<dt>$L(\bw)$</dt><dd><span class="ty">fonction $\R^{D+1}\to\R_+$</span>La <b>log-vraisemblance négative</b> (NLL) : somme des $-\ln(\text{proba de la bonne étiquette})$. Une prédiction sûre et juste coûte ≈ 0 ; sûre et fausse coûte → ∞.</dd>
+</dl></details>
+<p><strong>Image mentale</strong> (scène ci-dessous, données 1D) : chaque point est posé à hauteur 0 ou 1 selon sa classe ; la sigmoïde prédit une probabilité ; le segment vertical entre la courbe et l'étiquette mesure l'erreur, et la barre rouge est son coût $-\ln p(y_n|x_n)$. À droite, la NLL comme surface au-dessus du plan des paramètres $(w, b)$ : un bol convexe, mais pas une parabole.</p>
+<div data-scene="lg-likelihood"></div>
+
+<h3 id="ce">Interprétation : entropie croisée</h3>
+<div class="sources"><a class="src slides" href="../Slides/3-logistic-regression.pdf#page=16" target="_blank">Slides p.11, 16</a><a class="src book" href="../Textbooks/Pattern%20Recognition%20and%20Machine%20Learning.pdf#page=68" target="_blank">PRML §1.6 (théorie de l'information)</a></div>
+<div class="vids"><div class="vids-title">▶ Vidéos<span>en anglais · s'ouvrent sur YouTube</span></div><div class="vids-grid"><a class="vid" href="https://www.youtube.com/watch?v=6ArSys5qHAU" target="_blank" rel="noopener"><span class="vid-thumb">▶<img src="https://i.ytimg.com/vi/6ArSys5qHAU/mqdefault.jpg" loading="lazy" alt="" onerror="this.remove()"></span><span class="vid-body"><span class="vid-ch">StatQuest</span><span class="vid-t" style="display:block">Neural Networks Part 6: Cross Entropy</span><span class="vid-why" style="display:block">L'entropie croisée comme $-\ln$(probabilité de la bonne classe).</span></span></a></div></div>
+
+<div class="box def"><div class="box-title">Entropie croisée (<em>cross-entropy</em>)</div>
+Pour deux lois $r$ et $q$ sur un ensemble fini $\mathcal Y$ :
+$$H(r,q) := -\sum_{y\in\mathcal Y} r(y)\ln q(y).$$
+Avec la loi cible « one-hot » $r_n(y) = \mathbb 1(y = y_n)$ et la loi du modèle $q_{\bw,n}(y) = p(y\mid\bx_n,\bw)$ : $\ H(r_n,q_{\bw,n}) = -\ln p(y_n\mid\bx_n,\bw)$. Pour $y_n\in\{-1,+1\}$ :
+$$H(r_n,q_{\bw,n}) = -\ln\sigma\big(y_nf_{\bw}(\bx_n)\big) = \ln\big(1+e^{-y_nf_{\bw}(\bx_n)}\big)\qquad\text{(la « logistic loss »).}$$
+La NLL de chaque exemple est exactement sa perte d'entropie croisée.
+</div>
+<details class="objs" open><summary>Les objets en jeu</summary><dl>
+<dt>$r$ (ou $p$ dans les slides)</dt><dd><span class="ty">loi sur $\mathcal Y$</span>La loi « cible » (vérité). Ici un <b>Dirac</b> sur l'étiquette observée : $r_n = (0,\dots,1,\dots,0)$ (vecteur one-hot).</dd>
+<dt>$q$</dt><dd><span class="ty">loi sur $\mathcal Y$</span>La loi prédite par le modèle, $q(+1) = \sigma(f)$, $q(-1) = 1-\sigma(f) = \sigma(-f)$.</dd>
+<dt>$H(r,q)$</dt><dd><span class="ty">nombre $\ge0$</span>Nombre moyen de « nats » nécessaires pour coder des symboles tirés de $r$ avec un code optimisé pour $q$. Minimal (= entropie de $r$) quand $q = r$ ; ici l'entropie d'un one-hot est 0.</dd>
+</dl></details>
+<details class="proof"><summary>Preuve — de la NLL en $\{0,1\}$ à la logistic loss en $\{-1,+1\}$</summary>
+<div class="proof-body">
+<div class="step">Pour un exemple, la NLL vaut $-\ln\hat y$ si l'étiquette est « positive » et $-\ln(1-\hat y)$ sinon, avec $\hat y = \sigma(f)$.</div>
+<div class="step">Par symétrie, $1-\sigma(f) = \sigma(-f)$. Donc en codant la classe positive par $y=+1$ et la négative par $y=-1$, les deux cas s'écrivent $-\ln\sigma(yf)$.</div>
+<div class="step">$-\ln\sigma(yf) = -\ln\frac{1}{1+e^{-yf}} = \ln(1+e^{-yf})$. Avec la marge $m = yf$ : $\ell_{\text{CE}}(m) = \ln(1+e^{-m})$, décroissante, convexe, $\approx -m$ pour $m\ll0$ et $\approx e^{-m}\to0$ pour $m\gg0$.</div>
+<div class="step">Correspondance des étiquettes : $y^{\{0,1\}} = \frac{1+y^{\{\pm1\}}}{2}$. Les deux écritures (slide 15 et slide 16) définissent le même problème d'optimisation.</div>
+<div class="qed">∎</div>
+</div></details>
+
+<h3 id="surrogate">Pertes de substitution : la cross-entropy majore l'erreur 0-1</h3>
+<div class="sources"><a class="src slides" href="../Slides/3-logistic-regression.pdf#page=17" target="_blank">Slides p.11, 17–18</a><a class="src book" href="../Textbooks/Pattern%20Recognition%20and%20Machine%20Learning.pdf#page=357" target="_blank">PRML Fig. 7.5 p.337</a></div>
+<div class="box thm"><div class="box-title">Majoration de la perte 0-1</div>
+Avec $h(\bx) = \operatorname{sign}(f(\bx))$, $y\in\{-1,+1\}$, $\ell_{01}(\bx,y,f) = \mathbb 1(yf(\bx)\le0)$ et $\ell_{\text{CE}}(\bx,y,f) = \ln(1+e^{-yf(\bx)})$ :
+$$\mathbb 1(h(\bx)\ne y) \le C\cdot\ell_{\text{CE}}(\bx,y,f)\quad\text{avec } C = \frac1{\ln 2},\qquad\text{donc}\qquad \frac1N\sum_n\mathbb 1(h(\bx_n)\ne y_n) \le \frac CN\sum_n\ell_{\text{CE}}(\bx_n,y_n,f).$$
+Minimiser la cross-entropy moyenne minimise un <strong>majorant</strong> de l'erreur empirique de classification.
+</div>
+<div data-scene="lg-losses"></div>
+<details class="proof"><summary>Preuve — $\mathbb 1(m\le0)\le\frac{1}{\ln2}\ln(1+e^{-m})$</summary>
+<div class="proof-body">
+<div class="step">Posons $g(m) = \frac{\ln(1+e^{-m})}{\ln 2}$. $g$ est positive et décroissante (car $e^{-m}$ décroît).</div>
+<div class="step">Si $m>0$ : $\mathbb 1(m\le0) = 0\le g(m)$ car $g>0$.</div>
+<div class="step">Si $m\le0$ : $e^{-m}\ge1$ donc $1+e^{-m}\ge2$ donc $\ln(1+e^{-m})\ge\ln2$, soit $g(m)\ge1 = \mathbb 1(m\le 0)$.</div>
+<div class="step">En sommant sur les exemples on obtient la majoration de l'erreur empirique ; $C = 1/\ln2$ est la plus petite constante possible (égalité en $m = 0$).</div>
+<div class="qed">∎</div>
+</div></details>
+
+<!-- ===================================================================== -->
+<h2 id="gd"><span class="num">6</span>Descente de gradient pour la régression logistique</h2>
+<div class="sources"><a class="src slides" href="../Slides/3-logistic-regression.pdf#page=21" target="_blank">Slides p.20–24</a><a class="src book" href="../Textbooks/Pattern%20Recognition%20and%20Machine%20Learning.pdf#page=226" target="_blank">PRML éq. 4.91 p.206</a></div>
+<div class="box thm"><div class="box-title">Gradient de la NLL et règle de mise à jour</div>
+$$\nabla_{\bw} L(\bw) = -\sum_{n=1}^N\big(y_n - \hat y_n\big)\bx_n,\qquad \bw^{\text{new}}\leftarrow\bw^{\text{old}} + \gamma\sum_{n=1}^N\Big[y_n - \sigma\big(\bw^{\text{old}\top}\bx_n\big)\Big]\bx_n.$$
+Même forme que pour la régression linéaire (« erreur × entrée ») : c'est une propriété des <em>canonical link functions</em> (PRML §4.3.6). Pas de forme close : $\hat y_n$ dépend de $\bw$ de façon non linéaire.
+</div>
+<details class="objs" open><summary>Les objets en jeu</summary><dl>
+<dt>$y_n - \hat y_n$</dt><dd><span class="ty">réel $\in(-1,1)$</span>L'<b>erreur de probabilité</b> du point $n$ ($y_n\in\{0,1\}$). Proche de 0 si le point est bien et sûrement classé ⇒ il ne pousse presque plus.</dd>
+<dt>$(y_n - \hat y_n)\bx_n$</dt><dd><span class="ty">vecteur</span>La « force » exercée par le point $n$ sur $\bw$ : dans la direction de $\bx_n$ (ou de $-\bx_n$), d'intensité = l'erreur.</dd>
+<dt>$\gamma$</dt><dd><span class="ty">réel $>0$</span>Le pas, comme au chapitre 1.</dd>
+<dt>$\hat y_n' $</dt><dd><span class="ty">vecteur</span>Dans la preuve : $\nabla_{\bw}\hat y_n = \sigma'(\bw\T\bx_n)\bx_n = \hat y_n(1-\hat y_n)\bx_n$ (règle de la chaîne).</dd>
+</dl></details>
+<details class="proof"><summary>Preuve — dérivation du gradient (slide 23)</summary>
+<div class="proof-body">
+<div class="step">Posons $\hat y_n = \sigma(\bw\T\bx_n)$. Règle de la chaîne + dérivée de $\sigma$ : $\nabla_{\bw}\hat y_n = \sigma'(\bw\T\bx_n)\,\bx_n = \hat y_n(1-\hat y_n)\,\bx_n$.</div>
+<div class="step">$\nabla_{\bw} L = -\sum_n\Big[y_n\frac{\nabla\hat y_n}{\hat y_n} + (1-y_n)\frac{-\nabla\hat y_n}{1-\hat y_n}\Big]$ (dérivée de $\ln u$ = $u'/u$).</div>
+<div class="step">On substitue : $= -\sum_n\Big[y_n\frac{\hat y_n(1-\hat y_n)}{\hat y_n} - (1-y_n)\frac{\hat y_n(1-\hat y_n)}{1-\hat y_n}\Big]\bx_n = -\sum_n\big[y_n(1-\hat y_n) - (1-y_n)\hat y_n\big]\bx_n$.</div>
+<div class="step">On développe le crochet : $y_n - y_n\hat y_n - \hat y_n + y_n\hat y_n = y_n - \hat y_n$. D'où $\nabla_{\bw} L = -\sum_n(y_n-\hat y_n)\bx_n$. <span class="why">Les facteurs $\hat y(1-\hat y)$ se simplifient exactement : c'est pour ça que la sigmoïde et la cross-entropy « vont ensemble ».</span></div>
+<div class="step">Version $\{-1,+1\}$ : $\nabla_{\bw}\ln(1+e^{-y\bw\T\bx}) = -\sigma(-y\bw\T\bx)\,y\,\bx$ : poids $\sigma(-m)$, la probabilité d'erreur du modèle.</div>
+<div class="qed">∎</div>
+</div></details>
+<p>Dans la scène : chaque flèche est la force $(y_n-\hat y_n)\tilde\bx_n$ (projetée dans le plan), la frontière se déplace pendant l'entraînement. Coche « données séparables » : la NLL n'a plus de minimum fini, $\|\bw\|$ croît sans fin et la sigmoïde devient une marche — il faut régulariser.</p>
+<div data-scene="lg-gd"></div>
+<div class="extra-block">
+<p><b>Données linéairement séparables</b> <span class="src extra">Hors slides</span> <a class="src book" href="../Textbooks/Pattern%20Recognition%20and%20Machine%20Learning.pdf#page=226" target="_blank">PRML p.206</a>. Si un hyperplan sépare parfaitement les classes, alors $L(c\bw)\to0$ quand $c\to\infty$ (toutes les marges $\to+\infty$). L'infimum n'est pas atteint : le MLE « n'existe pas », les poids divergent. Remède : ajouter $\lambda\|\bw\|^2$ (MAP avec prior gaussien, comme au chapitre 1), ou arrêter tôt.</p>
+</div>
+
+<!-- ===================================================================== -->
+<h2 id="newton"><span class="num">7</span>Méthode de Newton (second ordre)</h2>
+<div class="sources"><a class="src slides" href="../Slides/3-logistic-regression.pdf#page=25" target="_blank">Slides p.25–33</a><a class="src book" href="../Textbooks/Pattern%20Recognition%20and%20Machine%20Learning.pdf#page=227" target="_blank">PRML §4.3.3 IRLS p.207–209</a><a class="src book" href="../Textbooks/Deep%20Learning%20-%20Foundations%20and%20Concepts.pdf#page=228" target="_blank">DL §7.1.1</a></div>
+<div class="vids"><div class="vids-title">▶ Vidéos<span>en anglais · s'ouvrent sur YouTube</span></div><div class="vids-grid"><a class="vid" href="https://www.youtube.com/watch?v=W7S94pq5Xuo" target="_blank" rel="noopener"><span class="vid-thumb">▶<img src="https://i.ytimg.com/vi/W7S94pq5Xuo/mqdefault.jpg" loading="lazy" alt="" onerror="this.remove()"></span><span class="vid-body"><span class="vid-ch">Visually Explained</span><span class="vid-t" style="display:block">Newton&#x27;s Method in Optimization</span><span class="vid-why" style="display:block">Newton = minimiser l'approximation quadratique : intuition, avantages, défauts.</span></span></a><a class="vid" href="https://www.youtube.com/watch?v=LbBcuZukCAw" target="_blank" rel="noopener"><span class="vid-thumb">▶<img src="https://i.ytimg.com/vi/LbBcuZukCAw/mqdefault.jpg" loading="lazy" alt="" onerror="this.remove()"></span><span class="vid-body"><span class="vid-ch">Khan Academy (Grant Sanderson)</span><span class="vid-t" style="display:block">The Hessian matrix</span><span class="vid-why" style="display:block">La hessienne : toutes les dérivées secondes rangées dans une matrice.</span></span></a></div></div>
+
+<p>La courbure apporte une information que le gradient n'a pas. Gradient = direction et vitesse de variation locale ; <strong>hessienne</strong> = variation du gradient (courbure).</p>
+<div class="box def"><div class="box-title">Hessienne · Série de Taylor</div>
+$$\bm H := \nabla^2 f(\bx) = \Big[\frac{\partial^2 f(\bx)}{\partial x_i\partial x_j}\Big]_{i,j}\in\R^{D\times D},\qquad \bm H = \frac{\partial}{\partial\bx}\nabla f(\bx).$$
+Pour $f$ lisse sur $\R$ : $T_\infty(x) = \sum_{k=0}^\infty\frac{f^{(k)}(x_0)}{k!}(x-x_0)^k$ ; la troncature $T_k$ approche $f$ près de $x_0$. En dimension $D$, à l'ordre 2 :
+$$f(\bx)\approx\tilde f(\bx) = f(\bx_k) + \nabla f(\bx_k)\T(\bx-\bx_k) + \tfrac12(\bx-\bx_k)\T\nabla^2 f(\bx_k)(\bx-\bx_k).$$
+</div>
+<details class="objs" open><summary>Les objets en jeu</summary><dl>
+<dt>$\frac{\partial^2 f}{\partial x_i\partial x_j}$</dt><dd><span class="ty">réel</span>Dérivée seconde croisée : comment la pente selon $x_j$ change quand on bouge $x_i$. Symétrique ($i\leftrightarrow j$) sous hypothèse de régularité (Schwarz).</dd>
+<dt>$\nabla^2 f(\bx)$</dt><dd><span class="ty">matrice symétrique $D\times D$</span>La <b>hessienne</b>. Ses valeurs propres = courbures le long de ses vecteurs propres. Toutes $>0$ : cuvette (minimum local) ; signes mêlés : selle.</dd>
+<dt>$f^{(k)}(x_0)$</dt><dd><span class="ty">réel</span>$k$-ième dérivée en $x_0$.</dd>
+<dt>$\tilde f$</dt><dd><span class="ty">fonction quadratique</span>L'<b>approximation quadratique</b> (parabole / paraboloïde tangent) de $f$ en $\bx_k$ : même valeur, même pente et même courbure en $\bx_k$.</dd>
+</dl></details>
+<div class="box def"><div class="box-title">Méthode de Newton</div>
+$$\bw^{\text{new}}\leftarrow\bw^{\text{old}} - \big[\nabla^2L(\bw^{\text{old}})\big]^{-1}\nabla L(\bw^{\text{old}})\qquad\text{(à comparer avec GD : } \bw^{\text{new}}\leftarrow\bw^{\text{old}}-\gamma\nabla L\text{)}.$$
+Pas de pas $\gamma$ explicite : l'inverse de la hessienne <strong>redimensionne</strong> le gradient selon la courbure locale. Convergence beaucoup plus rapide (quadratique près de l'optimum), mais chaque itération coûte plus cher : former $\nabla^2L$ ($O(ND^2)$) et la résoudre ($O(D^3)$).
+</div>
+<p><strong>Idée géométrique</strong> (slides p.29, 32) : en $\bw^{(k)}$, remplacer $L$ par sa parabole tangente $\tilde L$ et <em>sauter directement au fond</em> de cette parabole. Si $L$ est presque quadratique, on tombe presque sur le vrai minimum en un pas. Attention : si la courbure locale est négative, le fond de la parabole est un <em>maximum</em> — Newton peut monter (scène 1D, départ près de la bosse).</p>
+<div data-scene="lg-newton1d"></div>
+<details class="proof"><summary>Preuve — justification de la mise à jour de Newton (slide 31)</summary>
+<div class="proof-body">
+<div class="step">Taylor à l'ordre 2 en $\bw^{(k)}$ : $L(\bw)\approx\tilde L(\bw) = L(\bw^{(k)}) + \nabla L(\bw^{(k)})\T(\bw-\bw^{(k)}) + \frac12(\bw-\bw^{(k)})\T\nabla^2L(\bw^{(k)})(\bw-\bw^{(k)})$.</div>
+<div class="step">Gradient de la quadratique (règles du chapitre 1 avec la hessienne symétrique) : $\nabla\tilde L(\bw) = \nabla L(\bw^{(k)}) + \nabla^2L(\bw^{(k)})(\bw-\bw^{(k)})$.</div>
+<div class="step">On l'annule : $\nabla^2L(\bw^{(k)})(\bw - \bw^{(k)}) = -\nabla L(\bw^{(k)})$, d'où $\bw = \bw^{(k)} - [\nabla^2L(\bw^{(k)})]^{-1}\nabla L(\bw^{(k)})$.</div>
+<div class="step">C'est le minimum de $\tilde L$ si $\nabla^2L(\bw^{(k)})\succ0$. Si $L$ est fortement convexe, sa hessienne est définie positive en tout itéré (slide 30) : chaque pas vise bien un minimum.</div>
+<div class="step"><span class="src extra">Hors slides</span> Sur une quadratique exacte $L = \frac12\bw\T\bA\bw - \bb\T\bw$, $\nabla^2L = \bA$ et Newton donne $\bw^{(k)} - \bA^{-1}(\bA\bw^{(k)}-\bb) = \bA^{-1}\bb$ : l'optimum en <b>un seul pas</b>, quel que soit le conditionnement (pas de zigzag, contrairement à GD au chapitre 1).</div>
+<div class="qed">∎</div>
+</div></details>
+
+<h3 id="newton-logreg">Newton pour la régression logistique</h3>
+<div class="sources"><a class="src slides" href="../Slides/3-logistic-regression.pdf#page=33" target="_blank">Slides p.33</a><a class="src book" href="../Textbooks/Pattern%20Recognition%20and%20Machine%20Learning.pdf#page=227" target="_blank">PRML éq. 4.96–4.100</a></div>
+<div class="box thm"><div class="box-title">Gradient et hessienne de la NLL logistique</div>
+$$\nabla L(\bw) = -\sum_n(y_n-\hat y_n)\bx_n = \mathbf X\T(\hat\by-\by),\qquad \nabla^2L(\bw) = \sum_{n=1}^N\hat y_n(1-\hat y_n)\,\bx_n\bx_n\T = \mathbf X\T\mathbf R\mathbf X,$$
+où $\mathbf R = \operatorname{diag}\big(\hat y_n(1-\hat y_n)\big)$. La hessienne est semi-définie positive ⇒ $L$ est <strong>convexe</strong> : pas de minimum local parasite.
+</div>
+<details class="objs" open><summary>Les objets en jeu</summary><dl>
+<dt>$\mathbf X\in\R^{N\times(D+1)}$</dt><dd><span class="ty">matrice</span>Les entrées augmentées en lignes (la design matrix du chapitre 1).</dd>
+<dt>$\bx_n\bx_n\T$</dt><dd><span class="ty">matrice $(D{+}1)\times(D{+}1)$ de rang 1</span>Produit extérieur : la courbure apportée par le point $n$ est concentrée dans la direction $\bx_n$.</dd>
+<dt>$\hat y_n(1-\hat y_n)$</dt><dd><span class="ty">poids $\in(0,\frac14]$</span>= $\sigma'$ : les points <b>incertains</b> ($\hat y\approx\frac12$) courbent beaucoup la NLL, les points sûrs presque pas.</dd>
+<dt>$\mathbf R$</dt><dd><span class="ty">matrice diagonale</span>Les poids de chaque point. Newton = moindres carrés <b>pondérés</b> par $\mathbf R$, répétés : d'où le nom IRLS (<em>iteratively reweighted least squares</em>).</dd>
+</dl></details>
+<details class="proof"><summary>Preuve — hessienne et convexité</summary>
+<div class="proof-body">
+<div class="step">On dérive le gradient $-\sum_n(y_n-\hat y_n)\bx_n$ par rapport à $\bw$ : $y_n$ et $\bx_n$ sont constants, et $\nabla_{\bw}\hat y_n = \hat y_n(1-\hat y_n)\bx_n$.</div>
+<div class="step">$\frac{\partial}{\partial\bw}\big[-(y_n-\hat y_n)\bx_n\big] = \bx_n\,(\nabla_{\bw}\hat y_n)\T = \hat y_n(1-\hat y_n)\bx_n\bx_n\T$. En sommant : $\nabla^2L = \sum_n\hat y_n(1-\hat y_n)\bx_n\bx_n\T$.</div>
+<div class="step">Pour tout $\bv$ : $\bv\T\nabla^2L\,\bv = \sum_n\hat y_n(1-\hat y_n)(\bx_n\T\bv)^2\ge0$ car chaque poids est $>0$. Semi-définie positive partout ⇒ $L$ convexe. Définie positive si les $\bx_n$ engendrent $\R^{D+1}$.</div>
+<div class="step"><span class="src extra">Hors slides</span> Newton s'écrit $\bw^{\text{new}} = (\mathbf X\T\mathbf R\mathbf X)^{-1}\mathbf X\T\mathbf R\,\mathbf z$ avec $\mathbf z = \mathbf X\bw^{\text{old}} - \mathbf R^{-1}(\hat\by-\by)$ : les équations normales d'un problème de moindres carrés pondérés (PRML 4.99–4.100).</div>
+<div class="qed">∎</div>
+</div></details>
+<p>La scène ci-dessous : NLL d'un problème 1D en fonction de $(w,b)$. Bleu : GD ; jaune : Newton. Les ellipses violettes (2D) et le paraboloïde violet (3D) sont l'approximation quadratique $\tilde L$ au point courant de Newton : le pas suivant va exactement en son centre.</p>
+<div data-scene="lg-newton"></div>
+<div class="box q"><div class="box-title">Question des slides — avantages et inconvénients de Newton (p.30, 35)</div>
+<details class="proof"><summary>Réponse</summary><div class="proof-body">
+<p>✓ Convergence quadratique près de l'optimum, très peu d'itérations ; ✓ aucun pas à régler ; ✓ invariant aux changements d'échelle linéaires des paramètres (insensible au mauvais conditionnement). ✗ Coût par itération : calculer la hessienne $O(ND^2)$, la stocker $O(D^2)$, la résoudre $O(D^3)$ — inenvisageable pour un réseau de neurones à $10^9$ paramètres ; ✗ si la hessienne n'est pas définie positive (non convexe), le pas peut viser un maximum ou une selle ; ✗ loin de l'optimum, le pas plein peut être trop grand (on ajoute alors une line search, « Newton amorti »).</p>
+</div></details></div>
+
+<!-- ===================================================================== -->
+<h2 id="softmax"><span class="num">8</span>Multiclasse : régression softmax</h2>
+<div class="sources"><a class="src slides" href="../Slides/3-logistic-regression.pdf#page=34" target="_blank">Slides p.34</a><a class="src book" href="../Textbooks/Pattern%20Recognition%20and%20Machine%20Learning.pdf#page=229" target="_blank">PRML §4.3.4 p.209</a></div>
+<div class="vids"><div class="vids-title">▶ Vidéos<span>en anglais · s'ouvrent sur YouTube</span></div><div class="vids-grid"><a class="vid" href="https://www.youtube.com/watch?v=KpKog-L9veg" target="_blank" rel="noopener"><span class="vid-thumb">▶<img src="https://i.ytimg.com/vi/KpKog-L9veg/mqdefault.jpg" loading="lazy" alt="" onerror="this.remove()"></span><span class="vid-body"><span class="vid-ch">StatQuest</span><span class="vid-t" style="display:block">Neural Networks Part 5: ArgMax and SoftMax</span><span class="vid-why" style="display:block">Softmax vs argmax pour la classification multiclasse.</span></span></a></div></div>
+
+<div class="box def"><div class="box-title">Softmax regression</div>
+$$p(y = k\mid\bx) = \frac{\exp(\bw_k\T\bx)}{\sum_{j=1}^K\exp(\bw_j\T\bx)},\qquad L(\bw) = -\sum_{n=1}^N\sum_{k=1}^K y_{kn}\ln p(y_n = k\mid\bx_n),\quad y_{kn} = \mathbb 1[y_n = k].$$
+</div>
+<details class="objs" open><summary>Les objets en jeu</summary><dl>
+<dt>$K$</dt><dd><span class="ty">entier ≥ 2</span>Nombre de classes.</dd>
+<dt>$\bw_k\in\R^{D+1}$</dt><dd><span class="ty">vecteur</span>Un vecteur de poids <b>par classe</b> ; $\bw_k\T\bx$ est le score (logit) de la classe $k$.</dd>
+<dt>softmax</dt><dd><span class="ty">$\R^K\to$ simplexe</span>Exponentie les scores (tout devient positif) puis normalise (somme 1). « Soft » argmax : la plus grande entrée domine d'autant plus que les écarts sont grands.</dd>
+<dt>$y_{kn}$</dt><dd><span class="ty">0 ou 1</span>Codage one-hot de l'étiquette $n$ : la double somme ne garde que $-\ln p(y_n\mid\bx_n)$, la cross-entropy multiclasse.</dd>
+</dl></details>
+<p><strong>Géométrie</strong> : la classe prédite est $\argmax_k\bw_k\T\bx$. Chaque score est un plan au-dessus de l'espace d'entrée ; la prédiction est le plan le plus haut (l'enveloppe supérieure en 3D) ; les frontières sont les droites où deux plans se croisent, $(\bw_j - \bw_k)\T\bx = 0$. Pour $K = 2$, softmax = sigmoïde de $(\bw_1-\bw_0)\T\bx$ : on retrouve le cas binaire. Seules les <em>différences</em> de $\bw_k$ comptent (ajouter le même vecteur à tous ne change rien).</p>
+<div data-scene="lg-softmax"></div>
+<details class="proof"><summary>Preuve — softmax à 2 classes = sigmoïde ; invariance par translation</summary>
+<div class="proof-body">
+<div class="step">$p(y=1|\bx) = \frac{e^{a_1}}{e^{a_0}+e^{a_1}} = \frac{1}{1+e^{-(a_1-a_0)}} = \sigma(a_1-a_0)$ avec $a_k = \bw_k\T\bx$ (diviser haut et bas par $e^{a_1}$).</div>
+<div class="step">Si $\bw_k\to\bw_k+\mathbf c$ pour tout $k$, chaque exponentielle est multipliée par $e^{\mathbf c\T\bx}$, qui se simplifie : les probabilités sont inchangées. Le modèle a donc $(K-1)(D+1)$ degrés de liberté effectifs.</div>
+<div class="step"><span class="src extra">Hors slides</span> Gradient : $\nabla_{\bw_k}L = \sum_n(p(y=k|\bx_n) - y_{kn})\bx_n$, encore « erreur × entrée » (PRML 4.109).</div>
+<div class="qed">∎</div>
+</div></details>
+
+<!-- ===================================================================== -->
+<h2 id="summary"><span class="num">9</span>Résumé &amp; questions de la slide 35</h2>
+<div class="box q"><div class="box-title">Quel lien entre minimiser l'erreur de classification et minimiser la cross-entropy ?</div>
+<details class="proof"><summary>Réponse</summary><div class="proof-body"><p>L'erreur 0-1 n'est pas optimisable par gradient (constante par morceaux). La cross-entropy est une perte de substitution convexe et lisse qui la <b>majore</b> à une constante près : $\mathbb 1(yf\le0)\le\frac1{\ln2}\ln(1+e^{-yf})$. Minimiser la cross-entropy moyenne abaisse donc un majorant de l'erreur empirique. Et c'est aussi la NLL d'un modèle probabiliste (Bernoulli + sigmoïde) : on obtient des probabilités calibrées en prime.</p></div></details></div>
+<div class="box q"><div class="box-title">Avantages et inconvénients de Newton ?</div>
+<details class="proof"><summary>Réponse</summary><div class="proof-body"><p>Voir la section 7 : très peu d'itérations, pas de pas à régler, insensible au conditionnement ; mais hessienne coûteuse ($O(ND^2 + D^3)$ par itération), mémoire $O(D^2)$, et fiable seulement si la hessienne est définie positive.</p></div></details></div>
+<hr>
+<p class="c-dim" style="font-size:13px">Chapitre suivant : <a href="svm.html">machines à vecteurs de support</a>.</p>
+
+</div></main>
+</div>
+
+<script src="lib/katex/katex.min.js"></script>
+<script src="lib/katex/contrib/auto-render.min.js"></script>
+<script src="lib/three.min.js"></script>
+<script src="js/core/math.js"></script>
+<script src="js/core/plot2d.js"></script>
+<script src="js/core/scene3d.js"></script>
+<script src="js/core/ui.js"></script>
+<script src="js/logreg/l1-classif.js"></script>
+<script src="js/logreg/l2-model.js"></script>
+<script src="js/logreg/l3-optim.js"></script>
+<script>ML.page.boot();</script>
+</body>
+</html>

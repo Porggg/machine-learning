@@ -1,0 +1,6 @@
+# Devoirs : restent en local (non publiés)
+homework.html
+homework/
+js/homework/
+# macOS
+.DS_Store

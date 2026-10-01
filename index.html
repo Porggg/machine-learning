@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cours interactif — Machine Learning (POSTECH CSED/AIGS 515)</title>
+<link rel="stylesheet" href="lib/katex/katex.min.css">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="index.html"><span class="pi">∇</span>ML · POSTECH</a>
+  <nav>
+    <a href="index.html" class="active">Accueil</a>
+    <a href="linear-regression.html">1 · Régression linéaire</a>
+    <a href="logistic-regression.html">2 · Régression logistique</a>
+    <a href="svm.html">3 · SVM</a>
+    <a href="exercises.html">Entraînement</a>
+    <a class="local-only" href="homework.html">Devoirs</a>
+  </nav>
+</header>
+
+<section class="home-hero">
+  <h1>Machine Learning, en géométrie</h1>
+  <p>Cours interactif pour <b>CSED/AIGS 515</b> (Sangdon Park, automne 2026). Chaque notion du cours est accompagnée de scènes 2D/3D manipulables, des formules, des preuves détaillées repliables et de renvois aux slides et aux manuels.</p>
+  <div class="sources" style="margin-top:14px">
+    <span class="src slides">Slides — au programme</span>
+    <span class="src book">PRML / DL / RL — manuels (lien vers la page)</span>
+    <span class="src extra">Hors slides — compléments</span>
+    <span class="src hw">Devoirs</span>
+  </div>
+</section>
+
+<div class="cards">
+  <a class="card" href="linear-regression.html">
+    <canvas data-thumb="lr"></canvas>
+    <div class="card-body">
+      <div class="meta">Cours 2–3 · 9/10, 9/15 · PRML 3.1–3.3 · HW1</div>
+      <h3>1 · Régression linéaire</h3>
+      <p>MMSE et $\E[y|x]$, fonctions de base, moindres carrés comme projection, MLE, sur-apprentissage, ridge &amp; MAP, lasso &amp; parcimonie, GD, momentum, SGD. <b>19 scènes.</b></p>
+    </div>
+  </a>
+  <a class="card" href="logistic-regression.html">
+    <canvas data-thumb="logreg"></canvas>
+    <div class="card-body">
+      <div class="meta">Cours 4–5 · 9/17, 9/22 · PRML 4.3 · HW2</div>
+      <h3>2 · Régression logistique</h3>
+      <p>Classifieur de Bayes gaussien, sigmoïde et log-odds, géométrie de la frontière, cross-entropy, majoration de la perte 0-1, gradient, Newton (IRLS), softmax. <b>10 scènes.</b></p>
+    </div>
+  </a>
+  <a class="card" href="svm.html">
+    <canvas data-thumb="svm"></canvas>
+    <div class="card-body">
+      <div class="meta">Cours 6–7 · 9/29, 10/1 · PRML 7.1, 6.1–6.4 · HW3</div>
+      <h3>3 · SVM</h3>
+      <p>Marge géométrique, Lagrangien et point-selle, dualité faible/forte, KKT, dual et vecteurs de support (SMO), marge souple et hinge, kernels polynomial et RBF. <b>9 scènes.</b></p>
+    </div>
+  </a>
+  <a class="card" href="exercises.html">
+    <canvas data-thumb="quiz"></canvas>
+    <div class="card-body">
+      <div class="meta">Définitions · dérivations · calculs</div>
+      <h3>Entraînement (textes à trous)</h3>
+      <p>44 exercices type examen (définitions, dérivations à trous, calculs à valeurs aléatoires), réponses libres en LaTeX ou texte, corrigés détaillés.</p>
+    </div>
+  </a>
+  <a class="card local-only" href="homework.html">
+    <canvas data-thumb="hw"></canvas>
+    <div class="card-body">
+      <div class="meta">HW1 à rendre le 29/09 · HW0 rendu</div>
+      <h3>Devoirs maison</h3>
+      <p>Énoncés reformulés, indices progressifs, corrigés détaillés et expériences numériques du HW1 reproduites dans le navigateur.</p>
+    </div>
+  </a>
+</div>
+
+<section class="schedule">
+  <h2 style="margin-top:40px">Planning du cours</h2>
+  <p class="c-dim" style="font-size:14px">D'après le <a href="https://docs.google.com/spreadsheets/d/e/2PACX-1vRd2A8bm0avoKXjcekoCtg7jxSTh-tk06fMr0_GcsDDKYLHdYKkp8S_YkyZYuKYgJbq_KQx-oe-I5KR/pubhtml" target="_blank">planning officiel</a> (copié le 25/09/2026). Les lectures renvoient à la bonne page des PDF du dossier <code>Textbooks/</code>.</p>
+  <table><thead><tr><th>#</th><th>Date</th><th>Sujet</th><th>Devoir</th><th>Lecture</th><th></th></tr></thead><tbody id="sched"></tbody></table>
+</section>
+
+<script src="lib/katex/katex.min.js"></script>
+<script src="lib/katex/contrib/auto-render.min.js"></script>
+<script src="js/core/math.js"></script>
+<script src="js/core/plot2d.js"></script>
+<script src="js/core/ui.js"></script>
+<script>
+(function () {
+  const M = ML.math, C = M.C;
+  ML.renderMath(document.body);
+  // ---------- planning ----------
+  const PRML = '../Textbooks/Pattern%20Recognition%20and%20Machine%20Learning.pdf#page=', DL = '../Textbooks/Deep%20Learning%20-%20Foundations%20and%20Concepts.pdf#page=', RL = '../Textbooks/Reinforcement%20Learning-%20An%20Introduction.pdf';
+  const rows = [
+    ['1', '9/8', 'Introduction to ML', 'HW0 : DL ch. 2 Probability', [['DL ch. 2', DL + 43]], 'done'],
+    ['2', '9/10', 'Regression — Linear Regression', '', [['PRML 3.1–3.3', PRML + 158]], 'done', 'linear-regression.html'],
+    ['3', '9/15', 'Regression — Linear Regression', 'HW1', [['PRML 3.1–3.3', PRML + 158]], 'done', 'linear-regression.html'],
+    ['4', '9/17', 'Classification — Logistic Regression', '', [['PRML 4.3', PRML + 223]], 'done', 'logistic-regression.html'],
+    ['5', '9/22', 'Classification — Logistic Regression', 'HW2', [['PRML 4.3', PRML + 223]], 'done', 'logistic-regression.html'],
+    ['–', '9/24', 'Chuseok Holiday', '', [], 'todo'],
+    ['6', '9/29', 'Classification — SVMs', '', [['PRML 7.1', PRML + 346]], 'todo', 'svm.html'],
+    ['7', '10/1', 'Classification — SVMs', 'HW3', [['PRML 6.1–6.4', PRML + 313]], 'todo', 'svm.html'],
+    ['8', '10/6', 'Generalization and Model Selection', 'HW4', [], 'todo'],
+    ['9', '10/8', 'Classification — NNs', '', [['PRML 5.1–5.3', PRML + 247]], 'todo'],
+    ['10', '10/13', 'Classification — NNs', 'HW5 : NNs for classification', [['PRML 5.1–5.3', PRML + 247]], 'todo'],
+    ['11', '10/15', 'Online Learning — EW', 'HW6', [['FML ch. 8.2', null]], 'todo'],
+    ['12', '10/20', 'Exam 1', '', [], 'exam'],
+    ['13/14', '10/22', 'Clustering — k-means and EM', 'HW7 / HW8', [['PRML 9.1–9.2', PRML + 444]], 'todo'],
+    ['15', '10/27', 'Dimension Reduction — PCA', 'HW9', [['PRML 12.1', PRML + 581]], 'todo'],
+    ['16', '10/29', 'Density Estimation — VAE I', '', [['PRML 10.1', PRML + 482]], 'todo'],
+    ['17', '11/3', 'Density Estimation — VAE II', 'HW10', [['DL ch. 19', null]], 'todo'],
+    ['18', '11/5', 'Density Estimation — Transformers I', '', [['DL ch. 12', null]], 'todo'],
+    ['19', '11/10', 'Density Estimation — Transformers II', 'HW11 : transformer for generation', [], 'todo'],
+    ['20', '11/12', 'Exam 2', '', [], 'exam'],
+    ['21', '11/17', 'RL — MDP I', '', [['RL ch. 3', RL]], 'todo'],
+    ['22', '11/19', 'RL — MDP II', 'HW12', [], 'todo'],
+    ['23', '11/24', 'RL — PI/VI', 'HW13 : value iteration', [['RL ch. 4', RL]], 'todo'],
+    ['24', '11/26', 'RL — MC', 'HW14', [['RL ch. 5', RL]], 'todo'],
+    ['25', '12/1', 'RL — TD', 'HW15', [['RL ch. 6', RL]], 'todo'],
+    ['26', '12/8', 'RL — Policy Optimization I', '', [['RL ch. 13', RL]], 'todo'],
+    ['27', '12/10', 'RL — Policy Optimization II', 'HW16', [], 'todo'],
+    ['28', '12/15', 'Special Topic : Physical AI', '', [], 'todo'],
+    ['29', '12/17', 'Special Topic : Physical AI', 'HW17', [], 'todo'],
+    ['30', '12/22', 'Exam 3', '', [], 'exam'],
+  ];
+  const tb = document.getElementById('sched');
+  for (const [id, d, topic, hw, reads, cls, page] of rows) {
+    const tr = document.createElement('tr'); tr.className = cls;
+    tr.innerHTML = `<td>${id}</td><td>${d}</td><td>${page ? `<a href="${page}">${topic}</a>` : topic}</td><td>${hw}</td><td>${reads.map(([t, u]) => u ? `<a class="src book" href="${u}" target="_blank">${t}</a>` : `<span class="src book">${t}</span>`).join(' ')}</td><td>${page ? '<span class="pill">interactif</span>' : ''}</td>`;
+    tb.appendChild(tr);
+  }
+  // ---------- vignettes animées ----------
+  const thumbs = {
+    lr: (p, t) => {
+      const R = M.rng(3), pts = M.range(14).map(() => { const x = R.uniform(-3, 3); return [x, 0.5 * x + 0.3 + 0.5 * R.n()]; });
+      const w = M.ridge(pts.map(q => [q[0], 1]), pts.map(q => q[1]), 0), a = w[0] + 0.9 * Math.sin(t * 0.8), b = w[1] + 0.6 * Math.cos(t * 0.6);
+      pts.forEach(([x, y]) => { const r = y - (a * x + b); p.rect(x, a * x + b, x + Math.abs(r), y, { color: C.red, width: 1, fill: C.red, fillAlpha: 0.15, alpha: 0.6 }); });
+      p.fn(x => a * x + b, { color: C.yellow, width: 3 });
+      pts.forEach(([x, y]) => p.point(x, y, { color: '#fff', r: 3.5 }));
+    },
+    logreg: (p, t) => {
+      p.heatmap((x, y) => M.sigmoid(1.6 * (Math.cos(t * 0.4) * x + Math.sin(t * 0.4) * y)), v => M.divRgb(2 * v - 1).map(c => c * 0.6), { res: 5 });
+      p.fn(x => -Math.cos(t * 0.4) / Math.sin(t * 0.4) * x, { color: '#fff', width: 2 });
+    },
+    svm: (p, t) => {
+      const R = M.rng(8), A = M.range(9).map(() => [R.normal(-1.6, 0.6), R.normal(0.8, 0.6)]), B = M.range(9).map(() => [R.normal(1.6, 0.6), R.normal(-0.8, 0.6)]);
+      const m = 0.9 + 0.2 * Math.sin(t);
+      [-m, 0, m].forEach((o, i) => p.fn(x => 0.8 * x + o * 1.28, { color: i === 1 ? C.yellow : C.yellow, width: i === 1 ? 2.5 : 1, dash: i === 1 ? [] : [6, 4] }));
+      A.forEach(q => p.point(q[0], q[1], { color: C.blue, r: 4 })); B.forEach(q => p.point(q[0], q[1], { color: C.red, r: 4 }));
+    },
+    hw: (p, t) => {
+      const w = [0.1, 11.8, -33.5, 21.9]; // cubique proche de sin 2πx sur [0,1], remis à l'échelle
+      p.fn(x => Math.sin(Math.PI * (x + 3.5) / 3.5) * 1.6, { color: C.green, width: 2 });
+      const k = 0.5 + 0.5 * Math.sin(t);
+      p.fn(x => { const u = (x + 3.5) / 7; return 1.6 * (w[0] + w[1] * u + w[2] * u * u + w[3] * u ** 3) * (0.3 + 0.7 * k); }, { color: C.yellow, width: 3 });
+      p.tex('hw', -3.3, 1.8, '\\text{HW1}', { color: '#ddd', anchor: 'left', size: 16 });
+    },
+    quiz: (p, t) => {
+      p.tex('q', 0, 0.7, '\\bw_{\\text{ridge}} = \\big(\\;\\underline{\\qquad}\\; + \\bPhi\\T\\bPhi\\big)^{-1}\\bPhi\\T\\by', { color: '#ddd', size: 17 });
+      p.tex('a', 0, -0.7, 'N\\lambda\\mathbf I', { color: C.yellow, size: 22, alpha: 0.5 + 0.5 * Math.sin(t * 2) });
+    },
+  };
+  document.querySelectorAll('canvas[data-thumb]').forEach(cv => {
+    const host = document.createElement('div'); host.style.cssText = 'position:relative;height:170px;background:#000';
+    cv.replaceWith(host);
+    const P = new ML.Plot2D(host, { xlim: [-3.5, 3.5], ylim: [-2.2, 2.2], ticks: false, pad: [4, 4, 4, 4] });
+    const fn = thumbs[cv.dataset.thumb]; let t = 0;
+    P.onDraw = p => fn(p, t);
+    ML.loop(dt => { t += dt; P.request(); });
+  });
+})();
+</script>
+</body>
+</html>

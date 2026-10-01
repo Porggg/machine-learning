@@ -1,0 +1,687 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Régression linéaire — Cours interactif ML</title>
+<link rel="stylesheet" href="lib/katex/katex.min.css">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <a class="brand" href="index.html"><span class="pi">∇</span>ML · POSTECH</a>
+  <nav>
+    <a href="index.html">Accueil</a>
+    <a href="linear-regression.html" class="active">1 · Régression linéaire</a>
+    <a href="logistic-regression.html">2 · Régression logistique</a>
+    <a href="svm.html">3 · SVM</a>
+    <a href="exercises.html">Entraînement</a>
+    <a class="local-only" href="homework.html">Devoirs</a>
+  </nav>
+</header>
+
+<div class="layout">
+<aside class="sidebar">
+  <h4>Sommaire</h4>
+  <div class="toc"></div>
+  <div class="legend">
+    <h4>Sources</h4>
+    <div><span class="src slides">Slides</span> au programme (slides du cours)</div>
+    <div><span class="src book">PRML / DL</span> manuel de référence (lien → page)</div>
+    <div><span class="src extra">Hors slides</span> complément, pas dans les slides</div>
+    <div><span class="src hw">HW1</span> lié au devoir</div>
+  </div>
+</aside>
+
+<main class="content"><div class="content-inner">
+
+<h1>Régression linéaire<span class="sub">Linear Regression — Basic Optimization · Cours 2 &amp; 3 (9/10, 9/15)</span></h1>
+<div class="sources">
+  <a class="src slides" href="../Slides/2-linear-regression.pdf" target="_blank">Slides 2-linear-regression (47 p.)</a>
+  <a class="src book" href="../Textbooks/Pattern%20Recognition%20and%20Machine%20Learning.pdf#page=158" target="_blank">PRML ch. 3.1–3.3</a>
+  <a class="src book" href="../Textbooks/Deep%20Learning%20-%20Foundations%20and%20Concepts.pdf#page=131" target="_blank">DL ch. 4.1</a>
+  <a class="src book" href="../Textbooks/Deep%20Learning%20-%20Foundations%20and%20Concepts.pdf#page=226" target="_blank">DL ch. 7 (gradient descent)</a>
+  <a class="src hw" href="../Homework/Homework_1.pdf" target="_blank">HW1 (dû le 29/09)</a>
+</div>
+
+<p>Ce chapitre suit le plan des slides : <strong>(1)</strong> le problème de régression, <strong>(2)</strong> la régression linéaire ordinaire avec fonctions de base (<em>basis functions</em>), <strong>(3)</strong> le ridge (sur-apprentissage et régularisation), <strong>(4)</strong> le lasso (parcimonie, <em>sparsity</em>), <strong>(5)</strong> l'optimisation par gradient (GD, momentum, SGD). Chaque idée a une scène manipulable : fais bouger les paramètres <em>avant</em> de lire les preuves, l'intuition vient de là.</p>
+
+<div class="box intu"><div class="box-title">Mode d'emploi des scènes</div>
+<ul>
+<li><b>3D</b> : glisser = tourner · molette = zoom · clic droit (ou Maj + glisser) = déplacer.</li>
+<li><b>2D</b> : les points à halo sont déplaçables à la souris ; certaines scènes acceptent un clic pour ajouter un point (indiqué en bas à droite).</li>
+<li><b>Preuves</b> : clique sur « Preuve » pour la déplier, puis « Mode pas à pas » pour révéler une étape à la fois.</li>
+<li><b>◉ Affichage</b> (en haut à droite de chaque figure) : cases à cocher pour masquer / afficher la grille, les axes, les étiquettes et, selon la scène, ses éléments propres.</li>
+</ul></div>
+
+<!-- ===================================================================== -->
+<h2 id="setup"><span class="num">1</span>Le problème de régression</h2>
+<div class="sources">
+  <a class="src slides" href="../Slides/2-linear-regression.pdf#page=3" target="_blank">Slides p.3–5</a>
+  <a class="src book" href="../Textbooks/Pattern%20Recognition%20and%20Machine%20Learning.pdf#page=66" target="_blank">PRML §1.5.5 p.46</a>
+  <a class="src hw" href="../Homework/Homework_1.pdf" target="_blank">HW1 Q2.(1)</a>
+</div>
+
+<div class="box def"><div class="box-title">Définition — Régression</div>
+La régression modélise la relation entre une entrée $x$ (<em>covariate</em>, variable indépendante) et une sortie réelle $y$ (<em>target</em>, <em>response</em>) :
+$$y = f(x) + \varepsilon,$$
+où $\varepsilon$ est un bruit (facteurs non observés) qui suit une certaine distribution. C'est $\varepsilon$ qui rend $y$ aléatoire sachant $x$.
+</div>
+
+<p>On cherche le « meilleur » $f$. Le critère du cours est l'<strong>erreur quadratique moyenne</strong> (<em>mean squared error</em>) sous la vraie loi jointe $p(x,y)$ :</p>
+$$E(f) = \E\big[(y - f(x))^2\big] = \iint (y - f(x))^2\, p(x,y)\,dx\,dy.$$
+<details class="objs" open><summary>Les objets en jeu</summary><dl>
+<dt>$x$</dt><dd><span class="ty">élément de $\mathcal X$ (souvent $\R^D$)</span>L'<b>entrée</b> (<em>input, covariate</em>) : ce qu'on observe. Ex. slide 3 : $x = (\text{taille}, \text{poids})\in\R^2$.</dd>
+<dt>$y$</dt><dd><span class="ty">réel $\in\R$ (ou $\R^K$)</span>La <b>sortie</b> (<em>target, response</em>) qu'on veut prédire. Ex. la durée de vie.</dd>
+<dt>$X,\ Y$</dt><dd><span class="ty">variables aléatoires</span>Les versions <b>aléatoires</b> de $x$ et $y$ : $(X,Y)$ est le couple « tiré par la nature », $(x,y)$ une valeur particulière. On écrit $\E[Y\mid X]$ pour insister sur l'aléa.</dd>
+<dt>$p(x,y)$</dt><dd><span class="ty">densité sur $\mathcal X\times\R$</span>La <b>vraie loi jointe</b> (<em>data-generating distribution</em>) : la loi de probabilité <b>inconnue</b> selon laquelle le monde produit des couples $(x,y)$. C'est une densité : $p(x,y)\ge0$ et $\iint p(x,y)\,dx\,dy = 1$ ; la probabilité qu'un couple tombe dans une région $A$ est $\iint_A p$. « Vraie » s'oppose à « notre modèle » : $p$ décrit la réalité, on ne la connaît jamais, on n'en voit que des <b>échantillons</b> (le jeu de données). Dans la scène ci-dessous, le relief 3D <em>est</em> $p(x,y)$.</dd>
+<dt>$p(x)$</dt><dd><span class="ty">densité sur $\mathcal X$</span>La <b>loi marginale</b> des entrées : $p(x) = \int p(x,y)\,dy$. Dit « quelles entrées on rencontre et à quelle fréquence » (ex. la répartition des tailles/poids dans la population). Dans la scène : uniforme sur $[0,1]$.</dd>
+<dt>$p(y\mid x)$</dt><dd><span class="ty">densité sur $\R$, pour chaque $x$</span>La <b>loi conditionnelle</b> : $p(y\mid x) = p(x,y)/p(x)$. Parmi toutes les personnes de mêmes $x$, comment se répartissent les $y$. Factorisation : $p(x,y) = p(x)\,p(y\mid x)$ ⇔ « la nature tire d'abord $x\sim p(x)$, puis $y\sim p(y\mid x)$ ». Géométriquement : la coupe verticale du relief en $x$, renormalisée.</dd>
+<dt>$\varepsilon$</dt><dd><span class="ty">variable aléatoire réelle</span>Le <b>bruit</b> : tout ce que $x$ n'explique pas (facteurs non observés, erreurs de mesure). Si $f(x) = \E[y|x]$, alors $\varepsilon = y - \E[y|x]$ vérifie $\E[\varepsilon\mid x] = 0$ par construction.</dd>
+<dt>$f$</dt><dd><span class="ty">fonction $\mathcal X\to\R$</span>Le <b>prédicteur</b> : à chaque entrée il associe une prédiction $f(x)$. C'est l'inconnue du problème ; on la cherche dans une <b>classe</b> (linéaires, réseaux…).</dd>
+<dt>$\E[\,\cdot\,]$</dt><dd><span class="ty">opérateur : v.a. → nombre</span>L'<b>espérance</b> = moyenne pondérée par la loi : $\E[g(X,Y)] = \iint g(x,y)\,p(x,y)\,dx\,dy$. Intuition : la moyenne de $g$ sur une infinité de nouveaux exemples tirés de $p$.</dd>
+<dt>$E(f)$</dt><dd><span class="ty">nombre $\ge 0$ (une fonctionnelle de $f$)</span>La <b>MSE vraie</b> (ou risque) de $f$ : erreur quadratique moyenne sur <em>toute</em> la population, y compris les exemples futurs jamais vus. C'est ce qu'on veut petit, mais on ne peut pas la calculer puisque $p$ est inconnue → on l'approche par une moyenne sur les données (§3).</dd>
+<dt>$\E[y\mid x]$</dt><dd><span class="ty">fonction $\mathcal X\to\R$</span>L'<b>espérance conditionnelle</b> : $\E[y\mid x] = \int y\,p(y\mid x)\,dy$, le centre de gravité de la coupe en $x$. Vue comme fonction de $x$, c'est la « fonction de régression » (courbe jaune).</dd>
+<dt>$\Var(Y\mid X)$</dt><dd><span class="ty">fonction $\mathcal X\to\R_+$</span>La <b>variance conditionnelle</b> $\E[(Y-\E[Y|X])^2\mid X]$ : la largeur de la coupe en $x$. Si elle est constante (= $\sigma^2$), le bruit est dit <em>homoscédastique</em>.</dd>
+</dl></details>
+
+
+<div class="box thm"><div class="box-title">Théorème — l'estimateur MMSE est l'espérance conditionnelle</div>
+$$f^*_{\text{MSE}} = \argmin_f E(f) \quad\text{vérifie}\quad f^*_{\text{MSE}}(x) = \E[y \mid x].$$
+Plus précisément, pour <em>tout</em> $f$ on a la décomposition
+$$\underbrace{\E\big[(Y-f(X))^2\big]}_{\text{MSE de } f} = \underbrace{\E\big[\Var(Y\mid X)\big]}_{\text{bruit irréductible}} + \underbrace{\E\big[(\E[Y\mid X]-f(X))^2\big]}_{\text{écart à la régression idéale}\ \ge 0}.$$
+</div>
+
+<p><strong>Géométrie.</strong> Imagine la densité jointe $p(x,y)$ comme un relief au-dessus du plan $(x,y)$. Couper ce relief par le plan vertical « $x = x_0$ » donne (à normalisation près) la densité conditionnelle $p(y\mid x_0)$ : une bosse. Pour chaque $x_0$ il faut choisir <em>un seul</em> nombre $f(x_0)$ ; le nombre qui minimise l'écart quadratique moyen à une bosse est son <strong>centre de gravité</strong> $\E[y\mid x_0]$. La courbe jaune (le « crête » moyenne du relief) est donc la meilleure fonction possible, et même elle garde une erreur : la largeur des bosses, $\Var(Y\mid X)$.</p>
+
+<div data-scene="lr-joint"></div>
+
+<details class="proof"><summary>Preuve — décomposition de la MSE et optimalité de $\E[Y\mid X]$ <span class="hint">HW1 Q2.(1)</span></summary>
+<div class="proof-body">
+<div class="step">Notons $m(X) := \E[Y\mid X]$. On ajoute et retranche $m(X)$ dans le carré :
+$$ (Y-f(X))^2 = \big(Y - m(X)\big)^2 + 2\big(Y-m(X)\big)\big(m(X)-f(X)\big) + \big(m(X)-f(X)\big)^2.$$</div>
+<div class="step">On prend l'espérance du terme croisé en conditionnant d'abord par $X$ (loi des espérances totales, <em>tower property</em>) : $m(X)-f(X)$ est une fonction de $X$ seulement, donc « sort » de l'espérance conditionnelle :
+$$\E\big[(Y-m(X))(m(X)-f(X))\big] = \E\Big[(m(X)-f(X))\ \underbrace{\E\big[Y - m(X)\mid X\big]}_{= m(X)-m(X) = 0}\Big] = 0.$$</div>
+<div class="step">Pour le premier terme, toujours par conditionnement : $\E\big[(Y-m(X))^2\big] = \E\big[\E[(Y-\E[Y|X])^2\mid X]\big] = \E\big[\Var(Y\mid X)\big]$.</div>
+<div class="step">D'où $\E[(Y-f(X))^2] = \E[\Var(Y\mid X)] + \E[(m(X)-f(X))^2]$. Le premier terme ne dépend pas de $f$ ; le second est $\ge 0$ et vaut $0$ ssi $f(X) = m(X)$ presque sûrement. Donc $f^* = m = \E[Y\mid X]$ minimise la MSE, et la MSE minimale vaut $\E[\Var(Y\mid X)]$.</div>
+<div class="step"><span class="why">Version « point par point » (sans espérances totales) :</span> pour $x$ fixé, $g(c) = \E[(Y-c)^2\mid x] = c^2 - 2c\,\E[Y|x] + \E[Y^2|x]$ est une parabole en $c$, minimale en $c = \E[Y\mid x]$ ($g'(c) = 2c - 2\E[Y|x] = 0$). On minimise l'intégrande pour chaque $x$, donc l'intégrale.</div>
+<div class="qed">∎</div>
+</div></details>
+
+<div class="box q"><div class="box-title">Question des slides — « Why? » (p.4)</div>
+Pourquoi le meilleur $f$ est-il $\E[y\mid x]$ ? → Parce que pour chaque $x$, la constante qui minimise l'écart quadratique moyen à une variable aléatoire est sa moyenne (parabole en $c$). La régression, c'est donc de l'<strong>approximation de fonction</strong> de $\E[y\mid x]$ dans une classe choisie (linéaire, réseaux de neurones…), cf. slide 5.
+</div>
+
+<!-- ===================================================================== -->
+<h2 id="basis"><span class="num">2</span>Modèles linéaires et fonctions de base</h2>
+<div class="sources">
+  <a class="src slides" href="../Slides/2-linear-regression.pdf#page=7" target="_blank">Slides p.7–11</a>
+  <a class="src book" href="../Textbooks/Pattern%20Recognition%20and%20Machine%20Learning.pdf#page=158" target="_blank">PRML §3.1 p.138–140</a>
+  <a class="src book" href="../Textbooks/Deep%20Learning%20-%20Foundations%20and%20Concepts.pdf#page=131" target="_blank">DL §4.1.1 p.111</a>
+</div>
+
+<p>Hypothèse de base : $y = \theta\T x$ avec $x\in\R^d$. Sur un jeu de données, en empilant les $x_n\T$ en lignes d'une matrice $X\in\R^{N\times d}$ : $\ \mathbf y = X\theta$.</p>
+<p>« Linéaire » paraît trop pauvre (slide 7 : <em>« Are linear models too simple? »</em>). Le tour de passe-passe : on applique d'abord une transformation fixe $\phi$ à l'entrée.</p>
+
+<div class="box def"><div class="box-title">Définition — Régression linéaire à fonctions de base</div>
+$$f(x) = \sum_{\ell=1}^{L} w_\ell\,\phi_\ell(x) = \bw\T\bphi(x),\qquad \bphi(x) = \big[\phi_1(x),\dots,\phi_L(x)\big]\T.$$
+$f$ peut être <strong>non linéaire en $x$</strong> mais reste <strong>linéaire en $\bw$</strong>. C'est la linéarité en $\bw$ qui donne une solution en forme close.
+</div>
+<details class="objs" open><summary>Les objets en jeu</summary><dl>
+<dt>$x\in\R^D$</dt><dd><span class="ty">vecteur (entrée brute)</span>L'entrée à $D$ composantes (ex. $D=1$ dans le HW1).</dd>
+<dt>$\theta\in\R^d,\ X\in\R^{N\times d}$</dt><dd><span class="ty">vecteur, matrice</span>Slide 7 : modèle linéaire « brut » $y = \theta\T x$ ; $X$ empile les $N$ entrées en lignes, $\by = X\theta$.</dd>
+<dt>$\phi_\ell:\R^D\to\R$</dt><dd><span class="ty">fonction fixe (choisie à la main)</span>La $\ell$-ième <b>fonction de base</b> (<em>basis function</em>, <em>feature</em>) : elle extrait une caractéristique numérique de $x$ (une puissance, une bosse autour de $\mu_\ell$, une fréquence…). Elle n'est <b>pas</b> apprise.</dd>
+<dt>$\bphi(x)\in\R^L$</dt><dd><span class="ty">vecteur de features</span>L'empilement $[\phi_1(x),\dots,\phi_L(x)]\T$ : la représentation de $x$ dans « l'espace des features ». $\bphi$ envoie $\R^D$ dans $\R^L$ (souvent $L\gg D$).</dd>
+<dt>$L$</dt><dd><span class="ty">entier</span>Nombre de fonctions de base = nombre de paramètres. Polynôme de degré $M$ : $L = M+1$ (avec la constante $\phi_1 = 1$).</dd>
+<dt>$\bw\in\R^L$</dt><dd><span class="ty">vecteur de paramètres (appris)</span>Les <b>poids</b>. $w_\ell$ dit combien de $\phi_\ell$ on met dans le mélange. $f(x) = \bw\T\bphi(x)$ est le produit scalaire entre les poids et les features.</dd>
+<dt>$\mu_\ell,\ \sigma$</dt><dd><span class="ty">réels (hyperparamètres)</span>Pour la base gaussienne : centre et largeur de la $\ell$-ième bosse. Fixés avant l'apprentissage.</dd>
+</dl></details>
+
+
+<p>Exemples (slide 11) : polynomiale $\phi_\ell(x) = x^{\ell-1}$ ; gaussienne $\phi_\ell(x) = \exp\!\big(-\frac{\|x-\mu_\ell\|^2}{2\sigma^2}\big)$ ; sigmoïdale ; Fourier ; splines ; ondelettes. Dans la scène ci-dessous, chaque courbe fine colorée est un terme $w_\ell\phi_\ell(x)$ et la courbe jaune est leur <strong>somme</strong>. Bouge les poids : une base <em>locale</em> (gaussiennes) ne modifie la courbe que près de $\mu_\ell$ ; une base <em>globale</em> (polynômes, Fourier) la modifie partout.</p>
+
+<div data-scene="lr-basis"></div>
+
+<h3 id="lift">Le « relèvement » : une droite dans l'espace des features</h3>
+<p><strong>Intuition géométrique clé.</strong> Avec $\bphi(x) = [1, x, x^2]\T$, chaque point $x$ est envoyé sur la parabole $(x, x^2)$ du plan des features. Un modèle $f(x) = w_0 + w_1 x + w_2 x^2$ est un <strong>plan</strong> $y = w_0 + w_1 u + w_2 v$ au-dessus de ce plan $(u,v)$. La courbe apprise dans l'espace d'origine est simplement l'intersection de ce plan avec le « mur » vertical posé sur la parabole. Ajuster une parabole aux données = ajuster un plan à des points en 3D : c'est un problème <em>linéaire</em>.</p>
+<div data-scene="lr-lift"></div>
+<div class="box intu"><div class="box-title">À retenir</div>
+Même idée plus tard : régression logistique avec features, puis le <strong>kernel trick</strong> des SVM (on relève les données dans un espace où une séparation linéaire suffit, sans jamais calculer $\bphi$).
+</div>
+
+<!-- ===================================================================== -->
+<h2 id="ls"><span class="num">3</span>Moindres carrés (<em>least squares</em>)</h2>
+<div class="sources">
+  <a class="src slides" href="../Slides/2-linear-regression.pdf#page=12" target="_blank">Slides p.12–14</a>
+  <a class="src book" href="../Textbooks/Pattern%20Recognition%20and%20Machine%20Learning.pdf#page=160" target="_blank">PRML §3.1.1 p.140–142</a>
+  <a class="src hw" href="../Homework/Homework_1.pdf" target="_blank">HW1 Q2.(2)(3)</a>
+</div>
+<div class="vids"><div class="vids-title">▶ Vidéos<span>en anglais · s'ouvrent sur YouTube</span></div><div class="vids-grid"><a class="vid" href="https://www.youtube.com/watch?v=PaFPbb66DxQ" target="_blank" rel="noopener"><span class="vid-thumb">▶<img src="https://i.ytimg.com/vi/PaFPbb66DxQ/mqdefault.jpg" loading="lazy" alt="" onerror="this.remove()"></span><span class="vid-body"><span class="vid-ch">StatQuest</span><span class="vid-t" style="display:block">The Main Ideas of Fitting a Line to Data (Least Squares and Linear Regression)</span><span class="vid-why" style="display:block">Les moindres carrés en images : résidus, somme des carrés, pente et ordonnée optimales.</span></span></a><a class="vid" href="https://www.youtube.com/watch?v=4b4MUYve_U8" target="_blank" rel="noopener"><span class="vid-thumb">▶<img src="https://i.ytimg.com/vi/4b4MUYve_U8/mqdefault.jpg" loading="lazy" alt="" onerror="this.remove()"></span><span class="vid-body"><span class="vid-ch">Stanford CS229 — Andrew Ng</span><span class="vid-t" style="display:block">Lecture 2: Linear Regression and Gradient Descent</span><span class="vid-why" style="display:block">Cours complet : fonction de coût, gradient, équations normales — même niveau que les slides.</span></span></a></div></div>
+
+
+<div class="box def"><div class="box-title">Objectif d'apprentissage — MSE empirique</div>
+Étant donné $\mathcal D = \{(x_n, y_n)\}_{n=1}^N$, on minimise
+$$\EMSE(\bw) = \frac1N\sum_{n=1}^N\big(y_n - \bw\T\bphi(x_n)\big)^2 = \frac1N\|\by - \bPhi\bw\|^2,\qquad
+\bPhi = \begin{bmatrix}\phi_1(x_1) & \cdots & \phi_L(x_1)\\ \vdots & & \vdots\\ \phi_1(x_N) & \cdots & \phi_L(x_N)\end{bmatrix}\in\R^{N\times L}.$$
+La ligne $n$ de la <em>design matrix</em> $\bPhi$ est $\bphi(x_n)\T$ ; la colonne $\ell$ est la feature $\phi_\ell$ évaluée sur tous les points.
+</div>
+<details class="objs" open><summary>Les objets en jeu</summary><dl>
+<dt>$\mathcal D$</dt><dd><span class="ty">ensemble de $N$ couples</span>Le <b>jeu d'entraînement</b> $\{(x_n,y_n)\}_{n=1}^N$, supposé tiré i.i.d. (indépendamment, de même loi) selon la vraie loi $p(x,y)$ : ce sont les seuls morceaux de $p$ qu'on voit.</dd>
+<dt>$N$</dt><dd><span class="ty">entier</span>Nombre d'exemples (HW1 : $N=15$).</dd>
+<dt>$\by\in\R^N$</dt><dd><span class="ty">vecteur colonne</span>Toutes les cibles empilées : $\by = [y_1,\dots,y_N]\T$. Vu géométriquement (§3.2) : <b>un seul point</b> de $\R^N$.</dd>
+<dt>$\bphi_n := \bphi(x_n)\in\R^L$</dt><dd><span class="ty">vecteur</span>Les features du $n$-ième exemple = la $n$-ième ligne de $\bPhi$ (transposée).</dd>
+<dt>$\bPhi\in\R^{N\times L}$</dt><dd><span class="ty">matrice (design matrix)</span>$\Phi_{n\ell} = \phi_\ell(x_n)$. Ligne $n$ = un exemple ; colonne $\ell$ = une feature sur tous les exemples. $\bPhi\bw\in\R^N$ = vecteur de toutes les prédictions.</dd>
+<dt>$\EMSE(\bw)$</dt><dd><span class="ty">fonction $\R^L\to\R_+$</span>La <b>MSE empirique</b> : la MSE vraie $E(f)$ où l'on remplace l'espérance sous $p$ par la moyenne sur les $N$ exemples. Par la loi des grands nombres, pour $\bw$ fixé, $\EMSE(\bw)\to E(f_{\bw})$ quand $N\to\infty$.</dd>
+<dt>$\|\mathbf v\|^2$</dt><dd><span class="ty">nombre</span>Norme euclidienne au carré : $\|\mathbf v\|^2 = \mathbf v\T\mathbf v = \sum_n v_n^2$. Ici $\|\by-\bPhi\bw\|^2 = \sum_n r_n^2$, la somme des carrés des résidus $r_n = y_n - \bw\T\bphi_n$.</dd>
+<dt>$\bw_{\text{LS}}$</dt><dd><span class="ty">vecteur de $\R^L$</span>Le minimiseur de $\EMSE$ : l'estimateur des <b>moindres carrés</b> (<em>least squares</em>).</dd>
+<dt>$\bPhi^\dagger\in\R^{L\times N}$</dt><dd><span class="ty">matrice</span>La <b>pseudo-inverse</b> de Moore–Penrose. Si $\bPhi\T\bPhi$ est inversible, $\bPhi^\dagger = (\bPhi\T\bPhi)^{-1}\bPhi\T$ ; sinon elle donne la solution de norme minimale.</dd>
+</dl></details>
+
+
+<p><strong>Pourquoi « moindres carrés » ?</strong> Littéralement : chaque résidu $r_n = y_n - f(x_n)$ est le côté d'un carré d'aire $r_n^2$. La MSE empirique est l'aire moyenne de ces carrés. Déplace la droite (poignées) ou les points ; à droite, la même MSE vue comme une <strong>surface</strong> dans l'espace des paramètres $(w_1, w_2)$ : un paraboloïde (bol) dont le fond est $\bw_{\text{LS}}$.</p>
+<div data-scene="lr-squares"></div>
+
+<div class="box thm"><div class="box-title">Théorème — Estimateur des moindres carrés (<em>Least-Squares Estimator</em>)</div>
+La condition de stationnarité $\nabla_{\bw}\EMSE(\bw) = \frac2N\bPhi\T(\bPhi\bw - \by) = 0$ donne les <strong>équations normales</strong>
+$$\bPhi\T\bPhi\,\bw = \bPhi\T\by \qquad\Longrightarrow\qquad \bw_{\text{LS}} = (\bPhi\T\bPhi)^{-1}\bPhi\T\by = \bPhi^\dagger\by\quad\text{si } \bPhi\T\bPhi \text{ est inversible.}$$
+Sinon, la pseudo-inverse de Moore–Penrose $\bPhi^\dagger$ existe toujours (ou on utilise la descente de gradient). <em>We have a closed-form solution!</em>
+</div>
+
+<details class="proof"><summary>Preuve — gradient, équations normales et minimum global <span class="hint">HW1 Q2.(2)(3)</span></summary>
+<div class="proof-body">
+<div class="step">Développons : $\|\by-\bPhi\bw\|^2 = (\by-\bPhi\bw)\T(\by-\bPhi\bw) = \by\T\by - 2\bw\T\bPhi\T\by + \bw\T\bPhi\T\bPhi\bw$.
+<div class="why">On a utilisé $\by\T\bPhi\bw = (\by\T\bPhi\bw)\T = \bw\T\bPhi\T\by$ (un scalaire est égal à sa transposée).</div></div>
+<div class="step">Règles de calcul matriciel : $\nabla_{\bw}(\bw\T\bb) = \bb$ et $\nabla_{\bw}(\bw\T\bA\bw) = (\bA+\bA\T)\bw = 2\bA\bw$ si $\bA$ symétrique. Avec $\bA = \bPhi\T\bPhi$ (symétrique) et $\bb = \bPhi\T\by$ :
+$$\nabla_{\bw}\EMSE(\bw) = \frac1N\big(-2\bPhi\T\by + 2\bPhi\T\bPhi\bw\big) = \frac2N\bPhi\T(\bPhi\bw-\by).$$
+<div class="why">Vérification composante par composante : $\partial_{w_k}\frac1N\sum_n(\bw\T\bphi_n - y_n)^2 = \frac2N\sum_n(\bw\T\bphi_n-y_n)\phi_k(x_n)$, c'est bien la $k$-ième composante de $\frac2N\bPhi\T(\bPhi\bw-\by)$.</div></div>
+<div class="step">Stationnarité : $\nabla = 0 \iff \bPhi\T\bPhi\bw = \bPhi\T\by$ (équations normales). Si $\bPhi\T\bPhi$ est inversible, $\bw_{\text{LS}} = (\bPhi\T\bPhi)^{-1}\bPhi\T\by$.</div>
+<div class="step"><b>C'est bien un minimum global.</b> La hessienne vaut $\nabla^2\EMSE = \frac2N\bPhi\T\bPhi$, et pour tout $\bv$ : $\bv\T\bPhi\T\bPhi\bv = \|\bPhi\bv\|^2 \ge 0$. La hessienne est semi-définie positive partout ⇒ fonction convexe ⇒ tout point stationnaire est un minimum global. Si $\bPhi$ est de rang plein en colonnes ($\bPhi\bv = 0 \Rightarrow \bv = 0$), elle est définie positive ⇒ minimum <em>unique</em>.</div>
+<div class="step"><b>Quand $\bPhi\T\bPhi$ est-il inversible ?</b> $\bPhi\T\bPhi$ est inversible $\iff$ $\operatorname{rang}(\bPhi) = L$ $\iff$ colonnes linéairement indépendantes. Nécessite $N \ge L$ : avec moins de points que de paramètres (ex. $M = 10$ et $N = 5$), il y a une infinité de solutions qui interpolent parfaitement les données.</div>
+<div class="qed">∎</div>
+</div></details>
+
+<h3 id="ls-geo">Géométrie des moindres carrés : une projection orthogonale</h3>
+<div class="sources">
+  <a class="src book" href="../Textbooks/Pattern%20Recognition%20and%20Machine%20Learning.pdf#page=163" target="_blank">PRML §3.1.2 p.143 (Fig. 3.2)</a>
+  <span class="src extra">Hors slides</span>
+</div>
+<div class="vids"><div class="vids-title">▶ Vidéos<span>en anglais · s'ouvrent sur YouTube</span></div><div class="vids-grid"><a class="vid" href="https://www.youtube.com/watch?v=Y_Ac6KiQ1t0" target="_blank" rel="noopener"><span class="vid-thumb">▶<img src="https://i.ytimg.com/vi/Y_Ac6KiQ1t0/mqdefault.jpg" loading="lazy" alt="" onerror="this.remove()"></span><span class="vid-body"><span class="vid-ch">MIT OCW — Gilbert Strang</span><span class="vid-t" style="display:block">15. Projections onto Subspaces</span><span class="vid-why" style="display:block">Projection d'un vecteur sur un sous-espace : l'origine de $\bP = \bPhi(\bPhi\T\bPhi)^{-1}\bPhi\T$.</span></span></a><a class="vid" href="https://www.youtube.com/watch?v=osh80YCg_GM" target="_blank" rel="noopener"><span class="vid-thumb">▶<img src="https://i.ytimg.com/vi/osh80YCg_GM/mqdefault.jpg" loading="lazy" alt="" onerror="this.remove()"></span><span class="vid-body"><span class="vid-ch">MIT OCW — Gilbert Strang</span><span class="vid-t" style="display:block">16. Projection Matrices and Least Squares</span><span class="vid-why" style="display:block">Strang relie projection et moindres carrés : exactement la vue « un seul vecteur $\by\in\R^N$ ».</span></span></a></div></div>
+
+<p>Changeons de point de vue : au lieu de voir $N$ points dans le plan $(x,y)$, voyons <strong>un seul vecteur</strong> $\by\in\R^N$. Chaque choix de $\bw$ produit un vecteur de prédictions $\bPhi\bw = w_1\boldsymbol\varphi_1 + \dots + w_L\boldsymbol\varphi_L$ : une combinaison des <em>colonnes</em> de $\bPhi$. L'ensemble de toutes les prédictions possibles est le sous-espace $\mathcal S = \operatorname{col}(\bPhi)$ (dimension $\le L$). Minimiser $\|\by - \bPhi\bw\|$, c'est trouver le point de $\mathcal S$ <strong>le plus proche</strong> de $\by$ : la projection orthogonale. Avec $N = 3$ points et $L = 2$ features, on peut le voir en 3D.</p>
+<div data-scene="lr-proj"></div>
+
+<div class="box thm"><div class="box-title">Principe d'orthogonalité</div>
+$\hby = \bPhi\bw_{\text{LS}}$ est la projection orthogonale de $\by$ sur $\operatorname{col}(\bPhi)$ : le résidu $\by - \hby$ est orthogonal à <em>chaque colonne</em> de $\bPhi$,
+$$\bPhi\T(\by - \bPhi\bw_{\text{LS}}) = 0 \quad\text{— ce sont exactement les équations normales.}$$
+La matrice de projection (« hat matrix ») est $\bP = \bPhi(\bPhi\T\bPhi)^{-1}\bPhi\T$, avec $\bP^2 = \bP$ et $\bP\T = \bP$.
+</div>
+<details class="proof"><summary>Preuve — pourquoi le point le plus proche est la projection orthogonale</summary>
+<div class="proof-body">
+<div class="step">Soit $\hby\in\mathcal S$ tel que $\by-\hby \perp \mathcal S$. Pour tout autre $\mathbf z\in\mathcal S$, $\hby-\mathbf z\in\mathcal S$ donc $(\by-\hby)\perp(\hby-\mathbf z)$.</div>
+<div class="step">Pythagore : $\|\by-\mathbf z\|^2 = \|(\by-\hby) + (\hby-\mathbf z)\|^2 = \|\by-\hby\|^2 + \|\hby-\mathbf z\|^2 \ge \|\by-\hby\|^2$, avec égalité ssi $\mathbf z = \hby$.</div>
+<div class="step">« $\by-\bPhi\bw\perp\mathcal S$ » $\iff$ $\boldsymbol\varphi_\ell\T(\by-\bPhi\bw) = 0$ pour chaque colonne $\ell$ $\iff$ $\bPhi\T(\by-\bPhi\bw) = 0$ : on retrouve les équations normales, <em>sans aucun calcul de dérivée</em>.</div>
+<div class="step">$\bP^2 = \bPhi(\bPhi\T\bPhi)^{-1}\underbrace{\bPhi\T\bPhi(\bPhi\T\bPhi)^{-1}}_{\bI}\bPhi\T = \bP$ : projeter deux fois = projeter une fois. $\bP\T = \bP$ car $(\bPhi\T\bPhi)^{-1}$ est symétrique.</div>
+<div class="qed">∎</div>
+</div></details>
+
+<div class="extra-block">
+<h3 id="pinv">Pseudo-inverse et cas dégénéré <span class="src extra">Hors slides</span> <a class="src hw local-only" href="homework.html#q2-3">HW1 Q2.(3)</a></h3>
+<div class="sources"><a class="src slides" href="../Slides/2-linear-regression.pdf#page=14" target="_blank">Slides p.14 (« Moore–Penrose pseudoinverse Φ† still exists »)</a><a class="src book" href="../Textbooks/Pattern%20Recognition%20and%20Machine%20Learning.pdf#page=162" target="_blank">PRML éq. 3.17 p.142</a></div>
+
+<div class="box intu"><div class="box-title">La question à laquelle on répond</div>
+Le HW1 demande : <em>« Explain the role of $\bPhi^\dagger\by$ when $\bPhi\T\bPhi$ is singular. »</em> La formule $\hat\bw_{\text{LS}} = (\bPhi\T\bPhi)^{-1}\bPhi\T\by$ suppose qu'on peut inverser $\bPhi\T\bPhi$. Que se passe-t-il quand on ne peut pas ? Il faut comprendre, dans l'ordre : <b>(1)</b> quand ça arrive, <b>(2)</b> ce qui reste vrai, <b>(3)</b> ce qui casse, <b>(4)</b> comment on choisit quand même une solution — c'est le rôle de $\bPhi^\dagger\by$ —, <b>(5)</b> pourquoi c'est aussi utile quand la matrice est <em>presque</em> singulière.
+</div>
+
+<details class="objs" open><summary>Les objets en jeu</summary><dl>
+<dt>$\operatorname{rang}(\bPhi)$</dt><dd><span class="ty">entier $\le\min(N,L)$</span>Le nombre de colonnes <b>linéairement indépendantes</b> de $\bPhi$ = la dimension de $\operatorname{col}(\bPhi)$. $\bPhi\T\bPhi$ ($L\times L$) est inversible ssi $\operatorname{rang}(\bPhi) = L$ (« rang plein en colonnes »).</dd>
+<dt>$\operatorname{col}(\bPhi)\subseteq\R^N$</dt><dd><span class="ty">sous-espace</span>L'espace colonne : tous les vecteurs de prédictions $\bPhi\bw$ possibles (le plan bleu de la scène de projection).</dd>
+<dt>$\ker\bPhi\subseteq\R^L$</dt><dd><span class="ty">sous-espace (noyau)</span>$\{\bv : \bPhi\bv = 0\}$ : les directions dans lesquelles on peut bouger les poids <b>sans changer aucune prédiction</b>. Réduit à $\{0\}$ ssi rang plein.</dd>
+<dt>$\operatorname{row}(\bPhi) = \operatorname{col}(\bPhi\T)$</dt><dd><span class="ty">sous-espace de $\R^L$</span>L'espace des lignes, orthogonal à $\ker\bPhi$. Tout $\bw$ se décompose en une partie « utile » dans $\operatorname{row}(\bPhi)$ et une partie « invisible » dans $\ker\bPhi$.</dd>
+<dt>SVD $\bPhi = \mathbf U\boldsymbol\Sigma\mathbf V\T$</dt><dd><span class="ty">décomposition</span>$\mathbf V$ ($L\times L$) et $\mathbf U$ ($N\times N$) orthogonales, $\boldsymbol\Sigma$ « diagonale » de valeurs singulières $\sigma_1\ge\dots\ge\sigma_r>0$ (puis des zéros). Géométriquement : $\bPhi$ = tourner ($\mathbf V\T$), étirer chaque axe de $\sigma_i$ ($\boldsymbol\Sigma$), tourner ($\mathbf U$). Les $\sigma_i^2$ sont les valeurs propres de $\bPhi\T\bPhi$.</dd>
+<dt>$\bPhi^\dagger\in\R^{L\times N}$</dt><dd><span class="ty">matrice (pseudo-inverse de Moore–Penrose)</span>$\bPhi^\dagger = \mathbf V\boldsymbol\Sigma^+\mathbf U\T$ où $\boldsymbol\Sigma^+$ remplace chaque $\sigma_i>0$ par $1/\sigma_i$ et <b>laisse les zéros à zéro</b>. Existe toujours, pour n'importe quelle matrice.</dd>
+</dl></details>
+
+<h4>1. Quand $\bPhi\T\bPhi$ est-elle singulière ?</h4>
+<p>Exactement quand les colonnes de $\bPhi$ sont <b>linéairement dépendantes</b>, c'est-à-dire qu'une feature est une combinaison des autres. Trois situations typiques :</p>
+<ul>
+<li><b>Plus de paramètres que de points</b> : $L>N$ (ex. $M = 20$ avec $N = 15$ points). $L$ colonnes dans $\R^N$ ne peuvent pas être indépendantes si $L>N$.</li>
+<li><b>Des entrées répétées</b> : avec une base polynomiale, s'il n'y a que $k$ valeurs distinctes parmi les $x_n$, le rang est au plus $k$. Cas extrême de la scène : $x_1 = x_2 = x_3$ ⇒ les colonnes $\mathbf 1$ et $\mathbf x$ sont proportionnelles.</li>
+<li><b>Des features redondantes</b> : la même mesure deux fois (taille en cm et en mètres), ou une feature égale à la somme de deux autres.</li>
+</ul>
+<details class="proof"><summary>Preuve — $\bPhi\T\bPhi$ inversible $\iff$ colonnes de $\bPhi$ indépendantes $\iff\ker\bPhi = \{0\}$</summary>
+<div class="proof-body">
+<div class="step">Si $\bPhi\bv = 0$ alors $\bPhi\T\bPhi\bv = 0$ : $\ker\bPhi\subseteq\ker\bPhi\T\bPhi$.</div>
+<div class="step">Réciproquement, si $\bPhi\T\bPhi\bv = 0$ alors $0 = \bv\T\bPhi\T\bPhi\bv = \|\bPhi\bv\|^2$, donc $\bPhi\bv = 0$. Ainsi $\ker\bPhi\T\bPhi = \ker\bPhi$.</div>
+<div class="step">Une matrice carrée est inversible ssi son noyau est $\{0\}$. Et $\ker\bPhi = \{0\}$ signifie « aucune combinaison non nulle des colonnes ne donne 0 » : colonnes indépendantes.</div>
+<div class="qed">∎</div>
+</div></details>
+
+<h4>2. Ce qui reste vrai : la meilleure prédiction $\hby$ existe et est unique</h4>
+<p>Géométriquement, les moindres carrés projettent $\by$ sur $\operatorname{col}(\bPhi)$. Une projection sur un sous-espace <b>existe toujours et est unique</b>, que les colonnes soient indépendantes ou non : si elles sont dépendantes, $\operatorname{col}(\bPhi)$ est juste plus petit (un plan qui s'écrase en droite dans la scène de la section 3). Donc le vecteur de prédictions optimal $\hby$ et l'erreur minimale sont <b>parfaitement définis</b>. De plus, les équations normales $\bPhi\T\bPhi\bw = \bPhi\T\by$ ont <b>toujours</b> au moins une solution.</p>
+
+<h4>3. Ce qui casse : une infinité de $\bw$ donnent ce même $\hby$</h4>
+<div class="box thm"><div class="box-title">L'ensemble des solutions</div>
+Si $\hat\bw$ minimise $\EMSE$, alors les minimiseurs sont exactement $\ \{\hat\bw + \bv : \bv\in\ker\bPhi\}$ — une droite, un plan… de solutions (<b>« vallée plate »</b>), toutes avec les mêmes prédictions $\bPhi\hat\bw = \hby$ et la même erreur.
+</div>
+<details class="proof"><summary>Preuve</summary>
+<div class="proof-body">
+<div class="step">Si $\bv\in\ker\bPhi$ : $\bPhi(\hat\bw + \bv) = \bPhi\hat\bw + \bPhi\bv = \bPhi\hat\bw$. Mêmes prédictions ⇒ même MSE ⇒ aussi un minimiseur.</div>
+<div class="step">Réciproquement, deux minimiseurs $\bw_1,\bw_2$ donnent la même projection : $\bPhi\bw_1 = \bPhi\bw_2 = \hby$ (unicité de la projection), donc $\bw_1 - \bw_2\in\ker\bPhi$.</div>
+<div class="qed">∎</div>
+</div></details>
+<p><b>Image du bol</b> : la MSE en fonction de $\bw$ est un bol dont la courbure dans la direction $\bv$ vaut $\propto\|\bPhi\bv\|^2$ (voir la hessienne $\frac2N\bPhi\T\bPhi$). Dans les directions de $\ker\bPhi$ cette courbure est <b>nulle</b> : le bol devient une <b>gouttière</b> dont le fond est une droite horizontale. Il n'y a plus un point le plus bas, mais toute une ligne. C'est exactement ce que montre la scène ci-dessous quand $\varepsilon = 0$.</p>
+
+<h4>4. Choisir quand même : la solution de norme minimale $\bPhi^\dagger\by$</h4>
+<p>Parmi toutes les solutions de la vallée, on en choisit une de façon canonique : <b>la plus proche de l'origine</b> (norme $\|\bw\|$ minimale). Géométriquement, c'est la projection orthogonale de l'origine sur la droite (ou le plan) des solutions. C'est exactement ce que calcule la pseudo-inverse.</p>
+<div class="box thm"><div class="box-title">Rôle de $\bPhi^\dagger\by$</div>
+$\bw^\dagger := \bPhi^\dagger\by$ est l'<b>unique</b> minimiseur de $\EMSE$ de <b>norme minimale</b>. C'est aussi l'unique minimiseur situé dans $\operatorname{row}(\bPhi)$ (sans composante « invisible » dans $\ker\bPhi$). Ses prédictions sont $\bPhi\bw^\dagger = \hby$ (la projection). Si $\bPhi\T\bPhi$ est inversible, $\bPhi^\dagger = (\bPhi\T\bPhi)^{-1}\bPhi\T$ et on retrouve $\hat\bw_{\text{LS}}$.
+</div>
+<details class="proof"><summary>Preuve — par la SVD, en changeant de coordonnées</summary>
+<div class="proof-body">
+<div class="step"><b>Idée</b> : dans la bonne base, $\bPhi$ devient diagonale et le problème se découple coordonnée par coordonnée. Écrivons $\bPhi = \mathbf U\boldsymbol\Sigma\mathbf V\T$ et posons $\bz = \mathbf V\T\bw$ (coordonnées de $\bw$ dans la base des $\bv_i$) et $\mathbf c = \mathbf U\T\by$ (coordonnées de $\by$ dans la base des $\bu_i$).</div>
+<div class="step">$\mathbf U$ est orthogonale, donc elle conserve les longueurs : $\|\by - \bPhi\bw\|^2 = \|\mathbf U\T\by - \boldsymbol\Sigma\mathbf V\T\bw\|^2 = \|\mathbf c - \boldsymbol\Sigma\bz\|^2 = \sum_{i=1}^r(c_i - \sigma_iz_i)^2 + \sum_{i>r}c_i^2$, où $r$ est le rang.</div>
+<div class="step">Pour $i\le r$ ($\sigma_i>0$) : le terme est minimal pour $z_i = c_i/\sigma_i$. Pour $i>r$ ($\sigma_i = 0$) : $z_i$ <b>n'apparaît pas</b> dans l'erreur — n'importe quelle valeur convient. <span class="why">Ce sont exactement les directions de $\ker\bPhi$ : la vallée plate.</span> Le dernier terme $\sum_{i>r}c_i^2$ est l'erreur minimale, que rien ne peut réduire (la partie de $\by$ hors de $\operatorname{col}(\bPhi)$).</div>
+<div class="step">$\mathbf V$ est orthogonale donc $\|\bw\| = \|\bz\|$. Pour minimiser la norme parmi les solutions, on prend $z_i = 0$ pour les coordonnées libres. D'où $\bz^\dagger = \boldsymbol\Sigma^+\mathbf c$ et $\bw^\dagger = \mathbf V\bz^\dagger = \mathbf V\boldsymbol\Sigma^+\mathbf U\T\by = \bPhi^\dagger\by$, soit $\ \bw^\dagger = \sum_{i=1}^r\frac{\bu_i\T\by}{\sigma_i}\,\bv_i$.</div>
+<div class="step">Unicité : tout autre minimiseur a au moins un $z_i\ne0$ pour $i>r$, donc une norme strictement plus grande. Et $\bw^\dagger$ ne contient que des $\bv_i$ avec $\sigma_i>0$, qui engendrent $\operatorname{row}(\bPhi)$.</div>
+<div class="step">Rang plein ($r = L$) : aucune coordonnée libre, et $\mathbf V\boldsymbol\Sigma^+\mathbf U\T = (\bPhi\T\bPhi)^{-1}\bPhi\T$ (vérification : $(\bPhi\T\bPhi)^{-1}\bPhi\T = (\mathbf V\boldsymbol\Sigma^2\mathbf V\T)^{-1}\mathbf V\boldsymbol\Sigma\mathbf U\T = \mathbf V\boldsymbol\Sigma^{-2}\boldsymbol\Sigma\mathbf U\T$).</div>
+<div class="qed">∎</div>
+</div></details>
+
+<h4>5. Deux autres façons d'arriver à $\bPhi^\dagger\by$</h4>
+<ul>
+<li><b>Limite du ridge.</b> $\bPhi^\dagger\by = \lim_{\lambda\to0^+}(\bPhi\T\bPhi + \lambda\bI)^{-1}\bPhi\T\by$. En base SVD, le ridge donne $z_i = \frac{\sigma_i}{\sigma_i^2+\lambda}c_i$ : pour $\sigma_i>0$ cela tend vers $c_i/\sigma_i$, et pour $\sigma_i = 0$ cela vaut <b>exactement 0</b> pour tout $\lambda>0$. Le ridge avec un $\lambda$ infinitésimal choisit donc la solution de norme minimale (dans la scène : la courbe blanche du chemin ridge arrive sur le point jaune).</li>
+<li><b>Descente de gradient depuis $\bw_0 = 0$.</b> Le gradient $\frac2N\bPhi\T(\bPhi\bw-\by)$ est toujours dans $\operatorname{row}(\bPhi)$ : GD partant de 0 ne bouge jamais dans les directions de $\ker\bPhi$ et converge vers $\bw^\dagger$. (C'est pour cela que le HW impose $\bw_0 = 0$ en Q4.(2) : sinon, dans le cas dégénéré, GD pourrait converger vers une autre solution de la vallée.)</li>
+</ul>
+
+<h4>6. Le cas « presque singulier » : pourquoi c'est important pour $M = 10$</h4>
+<p>Avec $N = 15$ valeurs $x_n$ distinctes et $M\le10$, $\bPhi\T\bPhi$ est inversible <em>en théorie</em>. Mais les colonnes $x^0,\dots,x^{10}$ sur $[0,1]$ se ressemblent énormément : la plus petite valeur singulière est minuscule (conditionnement $\sim10^{15}$ dans le HW). Dans $\bw = \sum_i\frac{\bu_i\T\by}{\sigma_i}\bv_i$, diviser par un $\sigma_i\approx0$ <b>amplifie énormément</b> le bruit contenu dans $\bu_i\T\by$ : des coefficients gigantesques qui se compensent, instables d'un tirage à l'autre — c'est le sur-apprentissage vu du côté de l'algèbre. Remèdes :</p>
+<ul>
+<li><b>pseudo-inverse tronquée</b> : traiter comme nulles les $\sigma_i<\text{tol}\cdot\sigma_1$ (c'est le paramètre <code>rcond</code> de <code>np.linalg.pinv</code>) ⇒ on retombe sur une solution de norme raisonnable ;</li>
+<li><b>ridge</b> : remplacer $\frac1{\sigma_i}$ par $\frac{\sigma_i}{\sigma_i^2+\lambda}$, qui reste borné ;</li>
+<li>numériquement, résoudre par QR/SVD plutôt qu'en inversant $\bPhi\T\bPhi$ (qui <em>élève au carré</em> le conditionnement).</li>
+</ul>
+<p>Dans la scène : diminue $\varepsilon$ (les $x_n$ se rapprochent) — la solution exacte $\hat\bw_{\text{LS}}$ (rouge) part à l'infini le long de la vallée, alors que $\bPhi^\dagger$ tronquée (jaune) reste sage.</p>
+
+<div data-scene="lr-pinv"></div>
+
+<h4>7. Exemple entièrement à la main</h4>
+<p>Trois points avec la même entrée : $x_1 = x_2 = x_3 = 1$, $\by = (1,2,3)$, modèle $f(x) = w_0 + w_1x$. Donc $\bPhi = \begin{bmatrix}1&1\\1&1\\1&1\end{bmatrix}$.</p>
+<details class="proof"><summary>Calcul complet</summary>
+<div class="proof-body">
+<div class="step">$\bPhi\T\bPhi = \begin{bmatrix}3&3\\3&3\end{bmatrix}$, de déterminant $0$ : singulière. $\bPhi\T\by = (6, 6)$.</div>
+<div class="step">Équations normales : $3w_0 + 3w_1 = 6$ (deux fois la même) ⇔ $w_0 + w_1 = 2$ : une <b>droite</b> de solutions. Chacune prédit $f(1) = w_0 + w_1 = 2$ = la moyenne des $y$ — normal : avec une seule valeur de $x$, on ne peut rien dire de la pente, seulement de la valeur en $x = 1$.</div>
+<div class="step">$\ker\bPhi = \{t(1,-1)\}$ : augmenter $w_0$ de $t$ et baisser $w_1$ de $t$ ne change aucune prédiction.</div>
+<div class="step">Solution de norme minimale : le point de la droite $w_0+w_1 = 2$ le plus proche de l'origine est $(1,1)$ (projection orthogonale de 0 ; la droite a pour normale $(1,1)$). Donc $\bw^\dagger = (1,1)$, de norme $\sqrt2$.</div>
+<div class="step">Vérification SVD : $\bPhi$ est de rang 1, $\bPhi = \sigma\,\bu\bv\T$ avec $\bu = \frac1{\sqrt3}(1,1,1)$, $\bv = \frac1{\sqrt2}(1,1)$, $\sigma = \sqrt6$. $\bPhi^\dagger\by = \frac{\bu\T\by}{\sigma}\bv = \frac{6/\sqrt3}{\sqrt6}\cdot\frac{(1,1)}{\sqrt2} = (1,1)$ ✓.</div>
+<div class="qed">∎</div>
+</div></details>
+
+<div class="box hw local-only"><div class="box-title">Réponse type pour HW1 Q2.(3) (deuxième partie)</div>
+Si $\bPhi\T\bPhi$ est singulière ($\operatorname{rang}\bPhi<M+1$ : trop peu de points distincts ou features dépendantes), les équations normales ont une <b>infinité</b> de solutions $\hat\bw + \ker\bPhi$, qui donnent toutes la même prédiction $\hby$ (projection de $\by$ sur $\operatorname{col}\bPhi$) et la même erreur minimale. La pseudo-inverse de Moore–Penrose fournit alors $\bPhi^\dagger\by = \mathbf V\boldsymbol\Sigma^+\mathbf U\T\by$, l'<b>unique solution de norme minimale</b> (celle sans composante dans $\ker\bPhi$), qui coïncide avec $(\bPhi\T\bPhi)^{-1}\bPhi\T\by$ dans le cas inversible et est la limite du ridge quand $\lambda\to0^+$. Numériquement, pour $M = 10$ où $\bPhi\T\bPhi$ est presque singulière, on préfère la SVD/pseudo-inverse (éventuellement tronquée) à l'inversion explicite.
+</div>
+</div>
+
+
+<!-- ===================================================================== -->
+<h2 id="mle"><span class="num">4</span>Interprétation par maximum de vraisemblance</h2>
+<div class="sources">
+  <a class="src slides" href="../Slides/2-linear-regression.pdf#page=15" target="_blank">Slides p.15–18</a>
+  <a class="src book" href="../Textbooks/Pattern%20Recognition%20and%20Machine%20Learning.pdf#page=160" target="_blank">PRML §3.1.1 p.140–142</a>
+  <a class="src hw" href="../Homework/Homework_1.pdf" target="_blank">HW1 Q3.(1)</a>
+</div>
+<div class="vids"><div class="vids-title">▶ Vidéos<span>en anglais · s'ouvrent sur YouTube</span></div><div class="vids-grid"><a class="vid" href="https://www.youtube.com/watch?v=XepXtl9YKwc" target="_blank" rel="noopener"><span class="vid-thumb">▶<img src="https://i.ytimg.com/vi/XepXtl9YKwc/mqdefault.jpg" loading="lazy" alt="" onerror="this.remove()"></span><span class="vid-body"><span class="vid-ch">StatQuest</span><span class="vid-t" style="display:block">Maximum Likelihood, clearly explained!!!</span><span class="vid-why" style="display:block">L'idée de vraisemblance, sans formule, avec des cloches qu'on déplace.</span></span></a><a class="vid" href="https://www.youtube.com/watch?v=Dn6b9fCIUpM" target="_blank" rel="noopener"><span class="vid-thumb">▶<img src="https://i.ytimg.com/vi/Dn6b9fCIUpM/mqdefault.jpg" loading="lazy" alt="" onerror="this.remove()"></span><span class="vid-body"><span class="vid-ch">StatQuest</span><span class="vid-t" style="display:block">Maximum Likelihood For the Normal Distribution, step-by-step!!!</span><span class="vid-why" style="display:block">Le calcul complet du MLE gaussien, étape par étape (log, dérivée, annulation).</span></span></a></div></div>
+
+
+<div class="box def"><div class="box-title">Modèle d'observation gaussien</div>
+$y_n = \bw\T\bphi(x_n) + \varepsilon_n$ avec $\varepsilon_n \overset{\text{iid}}{\sim}\N(0,\sigma^2)$, c.-à-d. $\ p(y_n\mid\bphi(x_n),\bw) = \N\big(y_n\mid\bw\T\bphi(x_n),\sigma^2\big)$.<br>
+<b>Vraisemblance</b> (<em>likelihood</em>) : la densité des données observées vue comme fonction de $\bw$,
+$$\mathcal L(\bw;\mathcal D) = p(\by\mid\bPhi,\bw) = \prod_{n=1}^N p(y_n\mid\bphi(x_n),\bw),\qquad \bw_{\text{MLE}} = \argmax_{\bw} \mathcal L = \argmax_{\bw} \ln\mathcal L.$$
+</div>
+<details class="objs" open><summary>Les objets en jeu</summary><dl>
+<dt>$\sigma^2$</dt><dd><span class="ty">réel $>0$</span>La <b>variance du bruit</b> ($\sigma$ = écart-type). Supposée connue ou estimée ; elle fixe la largeur des cloches.</dd>
+<dt>$\N(y\mid\mu,\sigma^2)$</dt><dd><span class="ty">densité sur $\R$</span>La densité gaussienne $\frac1{\sqrt{2\pi\sigma^2}}\exp\!\big(-\frac{(y-\mu)^2}{2\sigma^2}\big)$, lue « densité de $y$ sous une normale de moyenne $\mu$ et variance $\sigma^2$ ». Ici $\mu = \bw\T\bphi(x_n)$ : la cloche est centrée sur la prédiction.</dd>
+<dt>$p(y_n\mid\bphi(x_n),\bw)$</dt><dd><span class="ty">nombre $\ge0$</span>Densité du <em>modèle</em> évaluée à la valeur observée $y_n$ : hauteur de la cloche au point observé.</dd>
+<dt>$\mathcal L(\bw;\mathcal D)$</dt><dd><span class="ty">fonction $\R^L\to\R_+$</span>La <b>vraisemblance</b> : la densité des données observées, vue comme fonction du paramètre $\bw$ (les données sont fixées). Attention : ce n'est <b>pas</b> une densité en $\bw$ (elle ne s'intègre pas à 1 en $\bw$).</dd>
+<dt>$\ln\mathcal L$</dt><dd><span class="ty">fonction $\R^L\to\R$</span>La <b>log-vraisemblance</b> : transforme le produit en somme, ne change pas l'argmax ($\ln$ strictement croissant), évite les sous-dépassements numériques.</dd>
+<dt>$\bw_{\text{MLE}}$</dt><dd><span class="ty">vecteur de $\R^L$</span>L'<b>estimateur du maximum de vraisemblance</b> : le $\bw$ qui rend les données observées les plus plausibles.</dd>
+</dl></details>
+
+
+<p><strong>Image mentale.</strong> Au-dessus de chaque $x_n$, le modèle pose une cloche gaussienne centrée sur la prédiction $\bw\T\bphi(x_n)$. La contribution du point $n$ à la vraisemblance est la <strong>hauteur de sa cloche à l'endroit où tombe $y_n$</strong> (bâtons verticaux dans la scène). La vraisemblance est le produit de ces hauteurs : elle est grande quand toutes les cloches « attrapent » leurs points près de leur sommet. Et comme la cloche gaussienne décroît en $e^{-r^2/2\sigma^2}$, maximiser le produit = minimiser $\sum r_n^2$.</p>
+<div data-scene="lr-mle"></div>
+
+<div class="box thm"><div class="box-title">Théorème — MLE = moindres carrés (sous bruit gaussien)</div>
+$$\ln\mathcal L(\bw;\mathcal D) = -\frac N2\ln(2\pi\sigma^2) - \frac{N}{2\sigma^2}\,\EMSE(\bw)\qquad\Longrightarrow\qquad \bw_{\text{MLE}} = \bw_{\text{LS}}.$$
+</div>
+<details class="proof"><summary>Preuve — vraisemblance, log-vraisemblance, MLE = LS <span class="hint">HW1 Q3.(1)</span></summary>
+<div class="proof-body">
+<div class="step">Densité d'une observation : $p(y_n\mid x_n,\bw) = \dfrac{1}{\sqrt{2\pi\sigma^2}}\exp\!\Big(-\dfrac{(y_n-\bw\T\bphi(x_n))^2}{2\sigma^2}\Big)$.</div>
+<div class="step">Indépendance des bruits ⇒ la densité jointe se factorise : $\mathcal L(\bw) = \prod_n p(y_n\mid x_n,\bw) = (2\pi\sigma^2)^{-N/2}\exp\!\Big(-\dfrac1{2\sigma^2}\sum_n(y_n-\bw\T\bphi(x_n))^2\Big)$.</div>
+<div class="step">Le log transforme le produit en somme (et $\ln$ est strictement croissant, donc même argmax) :
+$$\ln\mathcal L(\bw) = -\frac N2\ln(2\pi\sigma^2) - \frac1{2\sigma^2}\sum_n(y_n-\bw\T\bphi_n)^2 = -\frac N2\ln(2\pi\sigma^2) - \frac N{2\sigma^2}\EMSE(\bw).$$</div>
+<div class="step">Le premier terme ne dépend pas de $\bw$ et $\frac N{2\sigma^2}>0$. Maximiser $\ln\mathcal L$ revient donc à minimiser $\EMSE$ : $\bw_{\text{MLE}} = \argmin_{\bw}\EMSE(\bw) = \bw_{\text{LS}}$. Remarque : le résultat ne dépend pas de $\sigma$.</div>
+<div class="step"><span class="src extra">Hors slides</span> En dérivant aussi par rapport à $\sigma^2$ : $\partial_{\sigma^2}\ln\mathcal L = -\frac N{2\sigma^2} + \frac{N\,\EMSE}{2\sigma^4} = 0 \Rightarrow \sigma^2_{\text{ML}} = \EMSE(\bw_{\text{ML}})$ : la variance du bruit estimée est la MSE résiduelle (PRML éq. 3.21).</div>
+<div class="qed">∎</div>
+</div></details>
+
+<div class="box q"><div class="box-title">Question des slides — « Does the Gaussian assumption always hold? » (p.17)</div>
+Non. Le choix de la loss <em>encode</em> une hypothèse sur le bruit. Bruit de Laplace $p(\varepsilon)\propto e^{-|\varepsilon|/b}$ ⇒ la log-vraisemblance devient $-\frac1b\sum|r_n|$ ⇒ MLE = régression <strong>L1</strong> (médiane conditionnelle), bien plus robuste aux valeurs aberrantes (<em>outliers</em>). Essaie dans la scène : choisis le bruit « Laplace » et tire un point très loin — la droite L1 bouge beaucoup moins que la droite L2. <span class="src extra">Hors slides</span>
+</div>
+
+<!-- ===================================================================== -->
+<h2 id="overfit"><span class="num">5</span>Sur-apprentissage (<em>overfitting</em>)</h2>
+<div class="sources">
+  <a class="src slides" href="../Slides/2-linear-regression.pdf#page=20" target="_blank">Slides p.10, 20–21</a>
+  <a class="src book" href="../Textbooks/Pattern%20Recognition%20and%20Machine%20Learning.pdf#page=24" target="_blank">PRML §1.1 p.4–11 (même exemple)</a>
+  <a class="src hw" href="../Homework/Homework_1.pdf" target="_blank">HW1 Q2.(4)</a>
+</div>
+<div class="vids"><div class="vids-title">▶ Vidéos<span>en anglais · s'ouvrent sur YouTube</span></div><div class="vids-grid"><a class="vid" href="https://www.youtube.com/watch?v=EuBBz3bI-aA" target="_blank" rel="noopener"><span class="vid-thumb">▶<img src="https://i.ytimg.com/vi/EuBBz3bI-aA/mqdefault.jpg" loading="lazy" alt="" onerror="this.remove()"></span><span class="vid-body"><span class="vid-ch">StatQuest</span><span class="vid-t" style="display:block">Machine Learning Fundamentals: Bias and Variance</span><span class="vid-why" style="display:block">Biais, variance, sur-apprentissage : train vs test avec une courbe « squiggly ».</span></span></a></div></div>
+
+<p>Données du HW1 : $x_n\sim\mathrm{Unif}[0,1]$, $y_n = \sin(2\pi x_n) + \varepsilon_n$, $\varepsilon_n\sim\N(0, 0.2^2)$, $N_{\text{train}} = 15$, $N_{\text{test}} = 400$, base polynomiale $\bphi_M(x) = [1, x, \dots, x^M]\T$. Un modèle avec beaucoup de paramètres peut <strong>mémoriser</strong> le bruit au lieu d'apprendre la tendance. On le détecte en comparant erreurs d'entraînement et de test.</p>
+<div class="box warn"><div class="box-title">Note sur la graine</div>
+Le HW demande <code>seed 0</code> avec numpy. Ce générateur JavaScript n'est pas celui de numpy : les points ne sont pas identiques à ceux de ton notebook, mais le comportement (et les ordres de grandeur) le sont.
+</div>
+<div data-scene="lr-overfit"></div>
+
+<div class="box intu"><div class="box-title">Ce qu'il faut observer</div>
+<ul>
+<li>$M = 0, 1$ : <b>sous-apprentissage</b> (<em>underfitting</em>), erreurs train et test élevées : le modèle est trop rigide.</li>
+<li>$M = 3, 4$ : bon compromis, l'erreur de test est minimale.</li>
+<li>$M \ge 9$ : l'erreur d'entraînement → 0 (avec $N = 15$ et $M = 14$, $\bPhi$ est carrée : interpolation exacte), mais l'erreur de test explose. Les coefficients deviennent énormes (des $\pm 10^5$ qui se compensent) : c'est ce qu'observe la slide 21, <em>« overfitting when parameter magnitudes are large »</em>.</li>
+<li>Augmente $N$ : à $M$ fixé, le sur-apprentissage diminue. Plus de données = on peut se permettre un modèle plus riche.</li>
+</ul></div>
+
+<div class="extra-block">
+<h3 id="biasvar">Décomposition biais–variance <span class="src extra">Hors slides</span> <a class="src book" href="../Textbooks/Pattern%20Recognition%20and%20Machine%20Learning.pdf#page=167" target="_blank">PRML §3.2 p.147–152</a></h3>
+<p>Au programme de PRML 3.2 (lecture du planning), pas des slides. Imagine qu'on refait l'expérience avec beaucoup de jeux de données indépendants $\mathcal D$. Chaque jeu donne une fonction ajustée $f_{\mathcal D}$. En un point $x$ :</p>
+$$\E_{\mathcal D}\big[(f_{\mathcal D}(x) - h(x))^2\big] = \underbrace{\big(\E_{\mathcal D}[f_{\mathcal D}(x)] - h(x)\big)^2}_{\text{biais}^2} + \underbrace{\E_{\mathcal D}\big[(f_{\mathcal D}(x) - \E_{\mathcal D}[f_{\mathcal D}(x)])^2\big]}_{\text{variance}},\quad h(x) = \E[y\mid x].$$
+<p>Même astuce que la décomposition de la section 1 (ajouter/retrancher la moyenne, le terme croisé s'annule). Et l'erreur de test attendue $=$ biais² $+$ variance $+$ bruit. Régulariser fort ⇒ fonctions rigides, toutes pareilles (faible variance) mais fausses en moyenne (fort biais). Régulariser peu ⇒ bonnes en moyenne mais chacune colle à son bruit (forte variance).</p>
+<div data-scene="lr-biasvar"></div>
+</div>
+
+<!-- ===================================================================== -->
+<h2 id="ridge"><span class="num">6</span>Régression ridge — régularisation $\ell_2$</h2>
+<div class="sources">
+  <a class="src slides" href="../Slides/2-linear-regression.pdf#page=21" target="_blank">Slides p.21–22</a>
+  <a class="src book" href="../Textbooks/Pattern%20Recognition%20and%20Machine%20Learning.pdf#page=164" target="_blank">PRML §3.1.4 p.144</a>
+  <a class="src book" href="../Textbooks/Deep%20Learning%20-%20Foundations%20and%20Concepts.pdf#page=277" target="_blank">DL §9.2 weight decay</a>
+  <a class="src hw" href="../Homework/Homework_1.pdf" target="_blank">HW1 Q3.(3)</a>
+</div>
+<div class="vids"><div class="vids-title">▶ Vidéos<span>en anglais · s'ouvrent sur YouTube</span></div><div class="vids-grid"><a class="vid" href="https://www.youtube.com/watch?v=Q81RR3yKn30" target="_blank" rel="noopener"><span class="vid-thumb">▶<img src="https://i.ytimg.com/vi/Q81RR3yKn30/mqdefault.jpg" loading="lazy" alt="" onerror="this.remove()"></span><span class="vid-body"><span class="vid-ch">StatQuest</span><span class="vid-t" style="display:block">Regularization Part 1: Ridge (L2) Regression</span><span class="vid-why" style="display:block">Pourquoi pénaliser $\|\bw\|^2$ réduit la variance ; choix de $\lambda$.</span></span></a></div></div>
+
+<p>Pour limiter le sur-apprentissage : restreindre l'espace des paramètres en préférant les petits $\|\bw\|$ (slide 21).</p>
+<div class="box def"><div class="box-title">Ridge regression</div>
+$$E_{\text{ridge}}(\bw) = \underbrace{\frac1N\|\by-\bPhi\bw\|^2}_{\text{MSE empirique}} + \underbrace{\lambda\|\bw\|^2}_{\text{régulariseur}},\qquad \lambda > 0,$$
+$$\bw_{\text{ridge}} = \big(N\lambda\bI + \bPhi\T\bPhi\big)^{-1}\bPhi\T\by\quad\text{— unique, car } N\lambda\bI + \bPhi\T\bPhi\succ 0\ \text{pour tout } \lambda>0.$$
+</div>
+<details class="objs" open><summary>Les objets en jeu</summary><dl>
+<dt>$\lambda$</dt><dd><span class="ty">réel $>0$ (hyperparamètre)</span>Le <b>paramètre de régularisation</b> (<em>ridge parameter</em>) : prix payé par unité de $\|\bw\|^2$. Choisi à la main ou par validation, <b>pas</b> par minimisation de l'erreur d'entraînement (sinon on prendrait toujours $\lambda = 0$).</dd>
+<dt>$\|\bw\|^2 = \sum_\ell w_\ell^2$</dt><dd><span class="ty">nombre</span>Le <b>régulariseur</b> $\ell_2$ : carré de la distance de $\bw$ à l'origine. Ses lignes de niveau sont des cercles/sphères.</dd>
+<dt>$\bI\in\R^{L\times L}$</dt><dd><span class="ty">matrice identité</span>$N\lambda\bI$ ajoute $N\lambda$ sur la diagonale de $\bPhi\T\bPhi$ (le facteur $N$ vient du $\frac1N$ devant la MSE).</dd>
+<dt>$\mathbf A\succ 0$</dt><dd><span class="ty">notation</span>« $\mathbf A$ est <b>définie positive</b> » : $\bv\T\mathbf A\bv>0$ pour tout $\bv\ne0$ (toutes ses valeurs propres $>0$) ⇒ inversible. $\succeq 0$ = semi-définie positive (valeurs propres $\ge0$).</dd>
+<dt>$E_{\text{ridge}}(\bw)$</dt><dd><span class="ty">fonction $\R^L\to\R_+$</span>L'objectif régularisé : ajustement aux données + pénalité de complexité.</dd>
+</dl></details>
+
+<details class="proof"><summary>Preuve — forme close du ridge et définie-positivité</summary>
+<div class="proof-body">
+<div class="step">Gradient : $\nabla E_{\text{ridge}} = \frac2N\bPhi\T(\bPhi\bw-\by) + 2\lambda\bw$ (car $\nabla\|\bw\|^2 = 2\bw$).</div>
+<div class="step">Annulons et multiplions par $N/2$ : $\bPhi\T\bPhi\bw - \bPhi\T\by + N\lambda\bw = 0 \iff (N\lambda\bI + \bPhi\T\bPhi)\bw = \bPhi\T\by$.</div>
+<div class="step">Pour tout $\bv\ne 0$ : $\bv\T(N\lambda\bI + \bPhi\T\bPhi)\bv = N\lambda\|\bv\|^2 + \|\bPhi\bv\|^2 \ge N\lambda\|\bv\|^2 > 0$. La matrice est définie positive, donc inversible — <em>même si</em> $\bPhi\T\bPhi$ est singulière (ex. $N < L$). D'où l'unicité.</div>
+<div class="step">La hessienne $2(\frac1N\bPhi\T\bPhi + \lambda\bI)$ est définie positive ⇒ fonction strictement convexe ⇒ ce point stationnaire est l'unique minimum global.</div>
+<div class="step"><span class="src extra">Hors slides</span> Géométriquement, ajouter $\lambda\bI$ décale toutes les valeurs propres de $\frac1N\bPhi\T\bPhi$ de $\lambda$ : les directions « plates » du bol (valeur propre ≈ 0, instables) deviennent courbées. Le conditionnement passe de $\frac{\mu_{\max}}{\mu_{\min}}$ à $\frac{\mu_{\max}+\lambda}{\mu_{\min}+\lambda}$.</div>
+<div class="qed">∎</div>
+</div></details>
+
+<p>Ci-dessous, le polynôme $M = 10$ du HW1 avec la grille de $\lambda$ du devoir. Observe : $\|\bw\|$ s'effondre dès $\lambda \approx 10^{-7}$ ; l'erreur de test est en U en fonction de $\ln\lambda$ ; le troisième panneau montre le <strong>chemin de régularisation</strong> : chaque coefficient $w_j$ en fonction de $\ln\lambda$, qui tendent tous vers 0 (sans jamais l'atteindre exactement).</p>
+<div data-scene="lr-ridge"></div>
+
+<h3 id="ridge-geo">Géométrie du ridge : ellipses et cercle</h3>
+<div class="sources"><a class="src slides" href="../Slides/2-linear-regression.pdf#page=29" target="_blank">Slides p.29</a><a class="src book" href="../Textbooks/Pattern%20Recognition%20and%20Machine%20Learning.pdf#page=165" target="_blank">PRML Fig. 3.4 p.146</a></div>
+<p>Dans l'espace des poids $(w_1,w_2)$, la MSE est un bol dont les lignes de niveau sont des <strong>ellipses</strong> centrées en $\bw_{\text{LS}}$ (leurs axes sont les vecteurs propres de $\bPhi\T\bPhi$). Le régulariseur $\lambda\|\bw\|^2$ est un bol rond centré en 0 (niveaux = cercles). La somme de deux bols est un bol dont le fond $\bw_{\text{ridge}}$ se situe <strong>là où une ellipse est tangente à un cercle</strong> : les deux gradients y sont opposés, $\nabla\text{MSE} = -\lambda\nabla\|\bw\|^2$. Quand $\lambda$ va de $0$ à $\infty$, $\bw_{\text{ridge}}$ glisse de $\bw_{\text{LS}}$ vers $0$ le long de la courbe blanche.</p>
+<div data-scene="lr-ridge-geo"></div>
+<div class="extra-block">
+<p><b>Forme contrainte équivalente</b> <span class="src extra">Hors slides — revu au chapitre SVM (Lagrangien)</span>. Pour chaque $\lambda>0$ il existe un budget $t$ tel que $\bw_{\text{ridge}} = \argmin\{\EMSE(\bw) : \|\bw\|^2\le t\}$ ; $\lambda$ est le multiplicateur de Lagrange de la contrainte. Le point de tangence est exactement la condition « gradient de l'objectif ∝ gradient de la contrainte ».</p>
+<p><b>Rétrécissement par direction propre.</b> Si $\frac1N\bPhi\T\bPhi = \sum_i\mu_i\bu_i\bu_i\T$, alors la composante de $\bw_{\text{ridge}}$ sur $\bu_i$ vaut $\frac{\mu_i}{\mu_i+\lambda}$ fois celle de $\bw_{\text{LS}}$. Les directions peu informatives ($\mu_i$ petit, axe long de l'ellipse) sont écrasées ; les directions bien déterminées sont presque intactes. C'est visible dans la scène : le point glisse d'abord le long du grand axe.</p>
+</div>
+
+<!-- ===================================================================== -->
+<h2 id="map"><span class="num">7</span>Interprétation MAP (<em>maximum a posteriori</em>)</h2>
+<div class="sources">
+  <a class="src slides" href="../Slides/2-linear-regression.pdf#page=23" target="_blank">Slides p.23–26</a>
+  <a class="src book" href="../Textbooks/Pattern%20Recognition%20and%20Machine%20Learning.pdf#page=172" target="_blank">PRML §3.3.1 p.152–156 (Fig. 3.7)</a>
+  <a class="src hw" href="../Homework/Homework_1.pdf" target="_blank">HW1 Q3.(2)</a>
+</div>
+<div class="vids"><div class="vids-title">▶ Vidéos<span>en anglais · s'ouvrent sur YouTube</span></div><div class="vids-grid"><a class="vid" href="https://www.youtube.com/watch?v=845xlSrrB38" target="_blank" rel="noopener"><span class="vid-thumb">▶<img src="https://i.ytimg.com/vi/845xlSrrB38/mqdefault.jpg" loading="lazy" alt="" onerror="this.remove()"></span><span class="vid-body"><span class="vid-ch">Rich Radke (RPI)</span><span class="vid-t" style="display:block">PB65: Maximum A Posteriori (MAP) Estimation</span><span class="vid-why" style="display:block">Prior × vraisemblance → posterior, et le mode du posterior (MAP).</span></span></a></div></div>
+
+<p>Même modèle d'observation gaussien $p(\by\mid\bPhi,\bw) = \N(\by\mid\bPhi\bw,\sigma^2\bI)$, plus une croyance <em>a priori</em> : les bons paramètres sont petits, $p(\bw) = \N(\bw\mid 0,\bSigma)$.</p>
+<div class="box def"><div class="box-title">Estimateur MAP</div>
+$$\bw_{\text{MAP}} = \argmax_{\bw} p(\bw\mid\by,\bPhi) = \argmax_{\bw} \underbrace{p(\by\mid\bPhi,\bw)}_{\text{vraisemblance}}\ \underbrace{p(\bw)}_{\text{prior}},\qquad \bw_{\text{MAP}} = \big(\sigma^2\bSigma^{-1} + \bPhi\T\bPhi\big)^{-1}\bPhi\T\by.$$
+Par Bayes, $p(\bw\mid\by,\bPhi) = p(\by\mid\bPhi,\bw)p(\bw)/p(\by\mid\bPhi)$ et le dénominateur ne dépend pas de $\bw$. Avec $\bSigma = \frac{\sigma^2}{N\lambda}\bI$ (HW : $\bSigma = \tau^2\bI$, $\lambda = \frac{\sigma^2}{N\tau^2}$) : $\bw_{\text{MAP}} = \bw_{\text{ridge}}$.
+</div>
+<details class="objs" open><summary>Les objets en jeu</summary><dl>
+<dt>$p(\bw)$</dt><dd><span class="ty">densité sur $\R^L$</span>Le <b>prior</b> : ce qu'on croit sur $\bw$ <em>avant</em> de voir les données. Ici $\N(0,\bSigma)$ : « les poids sont probablement petits ».</dd>
+<dt>$\bSigma\in\R^{L\times L}$</dt><dd><span class="ty">matrice de covariance, $\succ0$</span>Forme et taille de la bosse du prior. $\bSigma = \tau^2\bI$ : bosse ronde de rayon typique $\tau$.</dd>
+<dt>$\tau$</dt><dd><span class="ty">réel $>0$</span>Écart-type a priori de chaque poids (HW1).</dd>
+<dt>$p(\by\mid\bPhi,\bw)$</dt><dd><span class="ty">densité sur $\R^N$</span>La <b>vraisemblance</b> (même modèle gaussien qu'au §4) : $\N(\by\mid\bPhi\bw,\sigma^2\bI)$.</dd>
+<dt>$p(\bw\mid\by,\bPhi)$</dt><dd><span class="ty">densité sur $\R^L$</span>Le <b>posterior</b> : croyance sur $\bw$ <em>après</em> avoir vu les données. Bayes : posterior $\propto$ vraisemblance × prior.</dd>
+<dt>$p(\by\mid\bPhi)$</dt><dd><span class="ty">nombre (constante)</span>L'<b>évidence</b> (<em>marginal likelihood</em>) $= \int p(\by\mid\bPhi,\bw)p(\bw)\,d\bw$ : normalise le posterior, indépendante de $\bw$ donc inutile pour l'argmax.</dd>
+<dt>$\bw_{\text{MAP}}$</dt><dd><span class="ty">vecteur de $\R^L$</span>Le <b>mode</b> (point le plus haut) du posterior.</dd>
+</dl></details>
+
+<p><strong>Géométrie.</strong> Dans l'espace des poids : le prior est une bosse ronde centrée en 0 ; chaque point observé ajoute une vraisemblance en forme de « crête » (une bande : toutes les droites qui passent près de ce point) ; le posterior est le produit. Chaque nouvelle observation multiplie par une nouvelle crête, et la bosse du posterior se resserre autour de la vraie valeur. C'est la Fig. 3.7 de PRML, en interactif : clique « observer un point ».</p>
+<div data-scene="lr-map"></div>
+<details class="proof"><summary>Preuve — MAP gaussien et équivalence avec le ridge <span class="hint">HW1 Q3.(2)</span></summary>
+<div class="proof-body">
+<div class="step">Log-posterior à constante près : $\ln p(\bw\mid\by) = \ln p(\by\mid\bw) + \ln p(\bw) + C = -\frac1{2\sigma^2}\|\by-\bPhi\bw\|^2 - \frac12\bw\T\bSigma^{-1}\bw + C'$.</div>
+<div class="step">Maximiser revient à minimiser $J(\bw) = \frac1{2\sigma^2}\|\by-\bPhi\bw\|^2 + \frac12\bw\T\bSigma^{-1}\bw$. Gradient : $\nabla J = \frac1{\sigma^2}\bPhi\T(\bPhi\bw-\by) + \bSigma^{-1}\bw$.</div>
+<div class="step">$\nabla J = 0 \iff (\bPhi\T\bPhi + \sigma^2\bSigma^{-1})\bw = \bPhi\T\by \iff \bw_{\text{MAP}} = (\sigma^2\bSigma^{-1} + \bPhi\T\bPhi)^{-1}\bPhi\T\by$. ($J$ est strictement convexe car $\bSigma^{-1}\succ0$.)</div>
+<div class="step">Avec $\bSigma = \tau^2\bI$ : $\sigma^2\bSigma^{-1} = \frac{\sigma^2}{\tau^2}\bI$. On compare avec $\bw_{\text{ridge}} = (N\lambda\bI + \bPhi\T\bPhi)^{-1}\bPhi\T\by$ : égalité ssi $N\lambda = \frac{\sigma^2}{\tau^2}$, soit $\lambda = \dfrac{\sigma^2}{N\tau^2}$. (Slides : $\bSigma = \frac{\sigma^2}{N\lambda}\bI$, c'est la même relation.)</div>
+<div class="step"><b>Lecture</b> : prior étroit ($\tau$ petit) ⇒ $\lambda$ grand ⇒ forte régularisation. Beaucoup de données ($N$ grand) à $\tau$ fixé ⇒ $\lambda$ effectif petit : les données « écrasent » le prior.</div>
+<div class="step"><span class="src extra">Hors slides</span> Le posterior complet est gaussien : $p(\bw\mid\by) = \N(\bw\mid\mathbf m_N,\mathbf S_N)$ avec $\mathbf S_N^{-1} = \bSigma^{-1} + \frac1{\sigma^2}\bPhi\T\bPhi$ et $\mathbf m_N = \frac1{\sigma^2}\mathbf S_N\bPhi\T\by$ (PRML 3.50–3.51). Le MAP est sa moyenne (= son mode). Les droites de la scène sont des tirages de ce posterior.</div>
+<div class="qed">∎</div>
+</div></details>
+
+<!-- ===================================================================== -->
+<h2 id="lasso"><span class="num">8</span>Régression lasso — parcimonie $\ell_1$</h2>
+<div class="sources">
+  <a class="src slides" href="../Slides/2-linear-regression.pdf#page=28" target="_blank">Slides p.28–29</a>
+  <a class="src book" href="../Textbooks/Pattern%20Recognition%20and%20Machine%20Learning.pdf#page=164" target="_blank">PRML §3.1.4 p.144–146 (Fig. 3.3, 3.4)</a>
+</div>
+<div class="vids"><div class="vids-title">▶ Vidéos<span>en anglais · s'ouvrent sur YouTube</span></div><div class="vids-grid"><a class="vid" href="https://www.youtube.com/watch?v=NGf0voTMlcs" target="_blank" rel="noopener"><span class="vid-thumb">▶<img src="https://i.ytimg.com/vi/NGf0voTMlcs/mqdefault.jpg" loading="lazy" alt="" onerror="this.remove()"></span><span class="vid-body"><span class="vid-ch">StatQuest</span><span class="vid-t" style="display:block">Regularization Part 2: Lasso (L1) Regression</span><span class="vid-why" style="display:block">Le lasso et sa différence clé avec le ridge : des coefficients exactement nuls.</span></span></a><a class="vid" href="https://www.youtube.com/watch?v=Xm2C_gTAl8c" target="_blank" rel="noopener"><span class="vid-thumb">▶<img src="https://i.ytimg.com/vi/Xm2C_gTAl8c/mqdefault.jpg" loading="lazy" alt="" onerror="this.remove()"></span><span class="vid-body"><span class="vid-ch">StatQuest</span><span class="vid-t" style="display:block">Ridge vs Lasso Regression, Visualized!!!</span><span class="vid-why" style="display:block">Pourquoi le lasso met des poids à 0 et pas le ridge, en visualisant la pénalité.</span></span></a></div></div>
+
+<div class="box def"><div class="box-title">Lasso regression</div>
+$$E_{\text{lasso}}(\bw) = \frac1N\|\by-\bPhi\bw\|^2 + \lambda\|\bw\|_1,\qquad \|\bw\|_1 = \sum_\ell|w_\ell|.$$
+Pas de forme close ; l'objectif n'est <strong>pas différentiable</strong> en $w_\ell = 0$ → sous-gradient (<em>subgradient</em>) ou descente de coordonnées. Question des slides : <em>« Does Lasso prefer a sparse solution? »</em> — Oui, et la raison est géométrique.
+</div>
+<details class="objs" open><summary>Les objets en jeu</summary><dl>
+<dt>$\|\bw\|_1 = \sum_\ell|w_\ell|$</dt><dd><span class="ty">nombre</span>La norme $\ell_1$ (distance « Manhattan » à l'origine). Ses lignes de niveau sont des <b>losanges</b> (2D) / octaèdres (3D), avec des coins sur les axes.</dd>
+<dt>$\|\bw\|_q = (\sum_\ell|w_\ell|^q)^{1/q}$</dt><dd><span class="ty">nombre ($q>0$)</span>Famille qui contient $\ell_1$ ($q=1$) et $\ell_2$ ($q=2$). Pour $q<1$ ce n'est plus une norme (boule non convexe).</dd>
+<dt>parcimonieux</dt><dd><span class="ty">propriété d'un vecteur</span>(<em>sparse</em>) beaucoup de coordonnées <b>exactement</b> nulles ⇒ les features correspondantes sont éliminées (sélection de variables).</dd>
+<dt>$\partial g(w)$</dt><dd><span class="ty">ensemble de réels</span>Le <b>sous-différentiel</b> d'une fonction convexe : l'ensemble des pentes des droites qui touchent $g$ en $w$ en restant dessous. Égal à $\{g'(w)\}$ là où $g$ est dérivable ; un intervalle aux plis (ex. $\partial|w|(0) = [-1,1]$).</dd>
+</dl></details>
+
+<p><strong>La boule a des coins.</strong> En forme contrainte, on cherche le point le plus bas du bol MSE dans la boule $\{\|\bw\|_q\le t\}$. On fait grossir les ellipses de niveau depuis $\bw_{\text{LS}}$ jusqu'à toucher la boule. Le cercle ($q=2$) est lisse : le contact a lieu « n'importe où ». Le losange ($q=1$) a des <strong>pointes sur les axes</strong> ; une ellipse qui grossit touche très souvent une pointe en premier ⇒ une coordonnée exactement nulle. Pour $q<1$ (non convexe), c'est encore plus marqué.</p>
+<div data-scene="lr-lq"></div>
+<p>En dimension 3, c'est encore plus parlant : l'octaèdre $\{\|\bw\|_1\le t\}$ a 6 sommets et 12 arêtes ; toucher un sommet ⇒ 2 zéros, une arête ⇒ 1 zéro. La sphère $\ell_2$ n'a ni l'un ni l'autre.</p>
+<div data-scene="lr-lasso3d"></div>
+
+<h3 id="soft">En 1D : le seuillage doux (<em>soft thresholding</em>)</h3>
+<div class="sources"><span class="src extra">Hors slides</span><a class="src slides" href="../Slides/2-linear-regression.pdf#page=28" target="_blank">« subgradient method », slide 28</a></div>
+<p>Prenons le problème scalaire $\min_w\ (w-a)^2 + \lambda|w|$ (c'est ce que résout la descente de coordonnées pour chaque $w_\ell$). La valeur absolue ajoute un <strong>pli</strong> en 0. Tant que $|a|$ est petit, le pli « retient » le minimum en 0 exactement ; le ridge, lui, ne fait que diviser par un facteur ($w^* = \frac{a}{1+\lambda}$), sans jamais donner 0.</p>
+<div data-scene="lr-soft"></div>
+<details class="proof"><summary>Preuve — seuillage doux par sous-gradient</summary>
+<div class="proof-body">
+<div class="step">Sous-différentiel de $|w|$ : $\partial|w| = \{\operatorname{sign}(w)\}$ si $w\ne0$, et $[-1,1]$ en $w = 0$ (toutes les pentes des droites qui passent sous le pli). Pour une fonction convexe, $w^*$ est un minimum $\iff 0\in\partial g(w^*)$.</div>
+<div class="step">$\partial g(w) = 2(w-a) + \lambda\,\partial|w|$. <b>Cas $w^*>0$</b> : $2(w^*-a)+\lambda = 0 \Rightarrow w^* = a - \frac\lambda2$, cohérent ssi $a > \frac\lambda2$. <b>Cas $w^*<0$</b> : $w^* = a+\frac\lambda2$, cohérent ssi $a< -\frac\lambda2$.</div>
+<div class="step"><b>Cas $w^* = 0$</b> : il faut $0\in -2a + \lambda[-1,1]$, i.e. $|a|\le\frac\lambda2$. Le pli est assez « ouvert » pour absorber la pente $-2a$ de la parabole.</div>
+<div class="step">Conclusion : $w^* = S_{\lambda/2}(a) := \operatorname{sign}(a)\max(|a|-\tfrac\lambda2, 0)$. Tout ce qui est plus petit que le seuil devient <em>exactement</em> 0 : c'est la sélection de variables (<em>feature selection</em>).</div>
+<div class="qed">∎</div>
+</div></details>
+
+<h3 id="paths">Chemins de régularisation : ridge vs lasso</h3>
+<p>Données synthétiques : 8 features corrélées dont seulement 3 sont vraiment utiles. À gauche le ridge : tous les coefficients rétrécissent ensemble, aucun ne s'annule. À droite le lasso (résolu par descente de coordonnées) : les coefficients quittent zéro un par un quand $\lambda$ diminue — le lasso fait de la <strong>sélection de variables</strong> (interprétabilité) et produit des modèles parcimonieux qui généralisent souvent bien (slide 29).</p>
+<div data-scene="lr-paths"></div>
+
+<!-- ===================================================================== -->
+<h2 id="optim"><span class="num">9</span>Apprendre = optimiser : descente de gradient</h2>
+<div class="sources">
+  <a class="src slides" href="../Slides/2-linear-regression.pdf#page=31" target="_blank">Slides p.31–36</a>
+  <a class="src book" href="../Textbooks/Deep%20Learning%20-%20Foundations%20and%20Concepts.pdf#page=227" target="_blank">DL §7.1–7.2 p.207–213</a>
+</div>
+<div class="vids"><div class="vids-title">▶ Vidéos<span>en anglais · s'ouvrent sur YouTube</span></div><div class="vids-grid"><a class="vid" href="https://www.youtube.com/watch?v=sDv4f4s2SB8" target="_blank" rel="noopener"><span class="vid-thumb">▶<img src="https://i.ytimg.com/vi/sDv4f4s2SB8/mqdefault.jpg" loading="lazy" alt="" onerror="this.remove()"></span><span class="vid-body"><span class="vid-ch">StatQuest</span><span class="vid-t" style="display:block">Gradient Descent, Step-by-Step</span><span class="vid-why" style="display:block">La descente de gradient pas à pas sur une régression : dérivées, pas, arrêt.</span></span></a><a class="vid" href="https://www.youtube.com/watch?v=IHZwWFHWa-w" target="_blank" rel="noopener"><span class="vid-thumb">▶<img src="https://i.ytimg.com/vi/IHZwWFHWa-w/mqdefault.jpg" loading="lazy" alt="" onerror="this.remove()"></span><span class="vid-body"><span class="vid-ch">3Blue1Brown</span><span class="vid-t" style="display:block">Gradient descent, how neural networks learn</span><span class="vid-why" style="display:block">Le gradient comme direction de descente dans un paysage de coût (animations 3Blue1Brown).</span></span></a></div></div>
+
+<div class="box def"><div class="box-title">Learning as optimization</div>
+$$\argmin_{\btheta}\ \hL(\btheta) = \argmin_{\btheta}\frac1N\sum_{i=1}^N\ell\big(y_i, f(x_i,\btheta)\big)$$
+$L(\btheta) := \E\,\ell(y, f(x,\btheta))$ est le <b>risque espéré</b> (<em>expected risk</em>) ; $\hL$ est le <b>risque empirique</b>. Les formes closes (comme la régression linéaire) sont l'exception.
+</div>
+<details class="objs" open><summary>Les objets en jeu</summary><dl>
+<dt>$\btheta$</dt><dd><span class="ty">vecteur de $\R^P$</span>Tous les paramètres du modèle (notation générique ; $=\bw$ en régression linéaire).</dd>
+<dt>$f(x,\btheta)$</dt><dd><span class="ty">prédiction (nombre)</span>Sortie du modèle de paramètres $\btheta$ sur l'entrée $x$.</dd>
+<dt>$\ell(y,\hat y)$</dt><dd><span class="ty">fonction $\to\R_+$</span>La <b>perte</b> (<em>loss</em>) d'un exemple : coût de prédire $\hat y$ quand la vérité est $y$. Ex. $\ell = (y-\hat y)^2$.</dd>
+<dt>$L(\btheta)$</dt><dd><span class="ty">nombre (fonction de $\btheta$)</span>Le <b>risque espéré</b> (<em>expected risk</em>) $\E_{(x,y)\sim p}[\ell(y,f(x,\btheta))]$ : la perte moyenne sur la vraie loi. Ce qu'on veut minimiser, mais incalculable.</dd>
+<dt>$\hL(\btheta)$</dt><dd><span class="ty">nombre (fonction de $\btheta$)</span>Le <b>risque empirique</b> : moyenne des pertes sur les $N$ exemples. Ce qu'on minimise effectivement (principe d'<em>empirical risk minimization</em>).</dd>
+</dl></details>
+
+
+<h3 id="gd1d">Un exemple 1D des slides</h3>
+<p>$\hL(\theta) = \theta^4 + 7\theta^3 + 5\theta^2 - 17\theta + 3$ (slides p.32–36, figure de MML). On cherche $\frac{d\hL}{d\theta} = 0$ (polynôme de degré 3 ici, mais pas de formule générale en degré ≥ 5 : Abel–Ruffini) ; la dérivée seconde classe les points stationnaires. Numériquement : la <strong>descente de gradient</strong> $\theta_{t+1} = \theta_t - \gamma\,\hL'(\theta_t)$. Déplace le point de départ : à gauche de la bosse on tombe dans le minimum global, à droite dans le minimum local. Augmente $\gamma$ pour voir l'overshoot, puis la divergence.</p>
+<div data-scene="lr-poly1d"></div>
+
+<h3 id="gradient">Le gradient, géométriquement</h3>
+<div class="sources"><a class="src slides" href="../Slides/2-linear-regression.pdf#page=34" target="_blank">Slides p.34</a><span class="src extra">Preuve de la plus forte pente : hors slides</span></div>
+<div class="vids"><div class="vids-title">▶ Vidéos<span>en anglais · s'ouvrent sur YouTube</span></div><div class="vids-grid"><a class="vid" href="https://www.youtube.com/watch?v=TEB2z7ZlRAw" target="_blank" rel="noopener"><span class="vid-thumb">▶<img src="https://i.ytimg.com/vi/TEB2z7ZlRAw/mqdefault.jpg" loading="lazy" alt="" onerror="this.remove()"></span><span class="vid-body"><span class="vid-ch">Khan Academy (Grant Sanderson)</span><span class="vid-t" style="display:block">Why the gradient is the direction of steepest ascent</span><span class="vid-why" style="display:block">Pourquoi $\nabla f$ pointe vers la plus forte montée (dérivée directionnelle).</span></span></a><a class="vid" href="https://www.youtube.com/watch?v=_-02ze7tf08" target="_blank" rel="noopener"><span class="vid-thumb">▶<img src="https://i.ytimg.com/vi/_-02ze7tf08/mqdefault.jpg" loading="lazy" alt="" onerror="this.remove()"></span><span class="vid-body"><span class="vid-ch">Khan Academy (Grant Sanderson)</span><span class="vid-t" style="display:block">Gradient and graphs</span><span class="vid-why" style="display:block">Le gradient vu sur le graphe de la fonction et sur ses lignes de niveau.</span></span></a></div></div>
+
+<div class="box def"><div class="box-title">Gradient</div>
+Pour $f:\R^D\to\R$, $\ \nabla f(\bx) = \big[\frac{\partial f}{\partial x_1},\dots,\frac{\partial f}{\partial x_D}\big]\T$ (vecteur colonne ; la dérivée $\frac{df}{d\bx}$ est sa transposée, un vecteur ligne).
+</div>
+<details class="objs" open><summary>Les objets en jeu</summary><dl>
+<dt>$f:\R^D\to\R$</dt><dd><span class="ty">fonction scalaire</span>Une fonction de plusieurs variables à valeur réelle (ex. la loss en fonction des paramètres).</dd>
+<dt>$\frac{\partial f}{\partial x_i}$</dt><dd><span class="ty">nombre (en chaque point)</span><b>Dérivée partielle</b> : pente de $f$ quand on ne bouge que $x_i$, les autres coordonnées étant gelées.</dd>
+<dt>$\nabla f(\bx)\in\R^D$</dt><dd><span class="ty">vecteur colonne</span>Le <b>gradient</b> : les $D$ pentes partielles empilées. Géométriquement : flèche perpendiculaire aux lignes de niveau, dans le sens de la montée la plus raide, de longueur = cette pente.</dd>
+<dt>$D_\bu f(\bx) = \nabla f\T\bu$</dt><dd><span class="ty">nombre ($\|\bu\|=1$)</span><b>Dérivée directionnelle</b> : pente de $f$ quand on part de $\bx$ dans la direction unitaire $\bu$.</dd>
+<dt>$\nabla^2 f(\bx)\in\R^{D\times D}$</dt><dd><span class="ty">matrice symétrique</span>La <b>hessienne</b> (dérivées secondes) : la courbure. Vue au chapitre 2 (Newton).</dd>
+</dl></details>
+
+<p>Trois faits géométriques : (1) $\nabla f$ est <strong>perpendiculaire aux lignes de niveau</strong> ; (2) il pointe dans la direction de <strong>plus forte montée</strong> ; (3) sa norme est la pente dans cette direction. Survole la carte : la rose polaire montre la dérivée directionnelle $D_\bu f = \nabla f\cdot\bu = \|\nabla f\|\cos\angle(\nabla f,\bu)$ pour chaque direction $\bu$ — deux cercles tangents, maximum dans la direction du gradient, nulle le long de la ligne de niveau.</p>
+<div data-scene="lr-gradfield"></div>
+<details class="proof"><summary>Preuve — $-\nabla f$ est la direction de plus forte descente</summary>
+<div class="proof-body">
+<div class="step">Taylor à l'ordre 1 : $f(\bx + h\bu) = f(\bx) + h\,\nabla f(\bx)\T\bu + o(h)$, donc la dérivée directionnelle est $D_\bu f(\bx) = \nabla f(\bx)\T\bu$ pour $\|\bu\| = 1$.</div>
+<div class="step">Cauchy–Schwarz : $-\|\nabla f\|\,\|\bu\| \le \nabla f\T\bu \le \|\nabla f\|\,\|\bu\|$, égalité à gauche ssi $\bu = -\nabla f/\|\nabla f\|$. La descente la plus rapide est donc dans la direction $-\nabla f$, avec pente $-\|\nabla f\|$.</div>
+<div class="step">Le long d'une ligne de niveau $f$ est constante, donc $D_\bu f = 0$ pour $\bu$ tangent : $\nabla f\T\bu = 0$, le gradient est orthogonal à la ligne de niveau.</div>
+<div class="step">Conséquence pour GD : pour $\gamma$ assez petit, $f(\bx - \gamma\nabla f) = f(\bx) - \gamma\|\nabla f\|^2 + o(\gamma) < f(\bx)$ dès que $\nabla f\ne0$ : un petit pas fait toujours descendre.</div>
+<div class="qed">∎</div>
+</div></details>
+
+<h3 id="gd2d">Descente de gradient sur une quadratique — zigzag, pas, momentum</h3>
+<div class="sources">
+  <a class="src slides" href="../Slides/2-linear-regression.pdf#page=38" target="_blank">Slides p.35, 38–42</a>
+  <a class="src book" href="../Textbooks/Deep%20Learning%20-%20Foundations%20and%20Concepts.pdf#page=235" target="_blank">DL §7.3 convergence, §7.3.1 momentum</a>
+</div>
+<div class="vids"><div class="vids-title">▶ Vidéos<span>en anglais · s'ouvrent sur YouTube</span></div><div class="vids-grid"><a class="vid" href="https://www.youtube.com/watch?v=k8fTYJPd3_I" target="_blank" rel="noopener"><span class="vid-thumb">▶<img src="https://i.ytimg.com/vi/k8fTYJPd3_I/mqdefault.jpg" loading="lazy" alt="" onerror="this.remove()"></span><span class="vid-body"><span class="vid-ch">DeepLearning.AI — Andrew Ng</span><span class="vid-t" style="display:block">Gradient Descent With Momentum (C2W2L06)</span><span class="vid-why" style="display:block">Le momentum comme moyenne des pas passés : moins de zigzag dans les vallées étroites.</span></span></a></div></div>
+
+<div class="box def"><div class="box-title">Gradient descent · Momentum</div>
+$$\text{GD :}\quad \btheta_{t+1} = \btheta_t - \gamma_t\nabla\hL(\btheta_t)\qquad\qquad
+\text{Momentum :}\quad \btheta_{i+1} = \btheta_i - \gamma_i\nabla\hL(\btheta_i) + \alpha\,\Delta\btheta_i,\quad \Delta\btheta_i = \btheta_i - \btheta_{i-1},\ \alpha\in[0,1].$$
+</div>
+<details class="objs" open><summary>Les objets en jeu</summary><dl>
+<dt>$t$ (ou $i$)</dt><dd><span class="ty">entier</span>Numéro d'itération.</dd>
+<dt>$\btheta_t$</dt><dd><span class="ty">vecteur de $\R^P$</span>Les paramètres après $t$ pas : un point qui se déplace dans l'espace des paramètres (la « bille »).</dd>
+<dt>$\gamma_t$</dt><dd><span class="ty">réel $>0$</span>Le <b>pas</b> (<em>step size</em>, <em>learning rate</em>) : de combien on avance le long de $-\nabla\hL$. Trop petit : lent ; trop grand : oscillations puis divergence.</dd>
+<dt>$\Delta\btheta_i = \btheta_i-\btheta_{i-1}$</dt><dd><span class="ty">vecteur</span>Le dernier déplacement effectué (la « vitesse » de la bille).</dd>
+<dt>$\alpha$</dt><dd><span class="ty">réel $\in[0,1]$</span>Le coefficient de <b>momentum</b> : fraction du déplacement précédent qu'on garde. $\alpha = 0$ : GD simple ; $\alpha\to1$ : peu de frottement.</dd>
+</dl></details>
+
+<p>Exemple des slides (p.38) : $\hL(\bx) = \frac12\bx\T\begin{bmatrix}2&1\\1&20\end{bmatrix}\bx - \begin{bmatrix}5\\3\end{bmatrix}\T\bx$, départ $\bx_0 = [-3,-1]\T$, $\gamma = 0.085$. La vallée est longue et étroite (<em>mal conditionnée</em>) : le gradient pointe presque perpendiculairement à la direction du minimum ⇒ <strong>zigzag</strong>. Le momentum (mémoire du pas précédent) amortit l'oscillation dans la direction raide et accumule la vitesse dans la direction plate. Compare les trois billes, change $\gamma$, le conditionnement, $\alpha$.</p>
+<div data-scene="lr-quad"></div>
+
+<div class="extra-block">
+<h4>Pourquoi $\gamma < 2/L$ ? Analyse exacte sur une quadratique <span class="src extra">Hors slides</span> <a class="src book" href="../Textbooks/Deep%20Learning%20-%20Foundations%20and%20Concepts.pdf#page=235" target="_blank">DL §7.3</a></h4>
+<p>La slide 39 (Murphy) mentionne « $\eta < 2/L$ ensures convergence ». Voici la preuve dans le cas quadratique, qui explique aussi le zigzag.</p>
+<details class="proof"><summary>Preuve — convergence de GD sur $\frac12\bx\T\bA\bx - \bb\T\bx$</summary>
+<div class="proof-body">
+<div class="step">$\nabla\hL(\bx) = \bA\bx - \bb$, minimum $\bx^* = \bA^{-1}\bb$. Erreur $\be_t = \bx_t - \bx^*$ : $\be_{t+1} = \be_t - \gamma(\bA\bx_t - \bA\bx^*) = (\bI - \gamma\bA)\be_t$.</div>
+<div class="step">Diagonalisons $\bA = \sum_i\mu_i\bu_i\bu_i\T$ ($\mu_1\ge\dots\ge\mu_D>0$). Dans la base propre, chaque composante évolue indépendamment : $e^{(i)}_{t+1} = (1-\gamma\mu_i)\,e^{(i)}_t$, donc $e^{(i)}_t = (1-\gamma\mu_i)^t e^{(i)}_0$.</div>
+<div class="step">Convergence $\iff |1-\gamma\mu_i|<1$ pour tout $i$ $\iff 0\lt \gamma\lt \frac{2}{\mu_{\max}}$. Ici $L = \mu_{\max}$ est la constante de Lipschitz du gradient. Si $1 - \gamma\mu_i < 0$, la composante <b>change de signe à chaque pas</b> : c'est le zigzag dans la direction raide.</div>
+<div class="step">Le taux global est $\max_i|1-\gamma\mu_i|$, minimisé pour $\gamma^* = \frac{2}{\mu_{\max}+\mu_{\min}}$, qui donne $\frac{\kappa-1}{\kappa+1}$ avec $\kappa = \mu_{\max}/\mu_{\min}$ (conditionnement). Plus $\kappa$ est grand, plus GD est lent. Momentum (bien réglé) améliore en $\frac{\sqrt\kappa-1}{\sqrt\kappa+1}$.</div>
+<div class="step"><b>Line search exacte</b> (slide 39) : $\eta_t = \argmin_\eta\hL(\btheta_t + \eta\mathbf d_t) = -\frac{\mathbf d_t\T(\bA\btheta_t - \bb)}{\mathbf d_t\T\bA\mathbf d_t}$ (on annule la dérivée d'une parabole en $\eta$). Avec $\mathbf d_t = -\nabla\hL$, les directions successives sont orthogonales (zigzag à angle droit, bille rose).</div>
+<div class="qed">∎</div>
+</div></details>
+</div>
+
+<h3 id="sgd">Descente de gradient stochastique (SGD)</h3>
+<div class="sources">
+  <a class="src slides" href="../Slides/2-linear-regression.pdf#page=37" target="_blank">Slides p.37, 43–46</a>
+  <a class="src book" href="../Textbooks/Pattern%20Recognition%20and%20Machine%20Learning.pdf#page=163" target="_blank">PRML §3.1.3 (LMS) p.143</a>
+  <a class="src book" href="../Textbooks/Deep%20Learning%20-%20Foundations%20and%20Concepts.pdf#page=231" target="_blank">DL §7.2.3–7.2.4</a>
+  <a class="src hw" href="../Homework/Homework_1.pdf" target="_blank">HW1 Q4</a>
+</div>
+<div class="vids"><div class="vids-title">▶ Vidéos<span>en anglais · s'ouvrent sur YouTube</span></div><div class="vids-grid"><a class="vid" href="https://www.youtube.com/watch?v=vMh0zPT0tLI" target="_blank" rel="noopener"><span class="vid-thumb">▶<img src="https://i.ytimg.com/vi/vMh0zPT0tLI/mqdefault.jpg" loading="lazy" alt="" onerror="this.remove()"></span><span class="vid-body"><span class="vid-ch">StatQuest</span><span class="vid-t" style="display:block">Stochastic Gradient Descent, Clearly Explained!!!</span><span class="vid-why" style="display:block">SGD et mini-batchs : même descente, un gradient estimé sur quelques points.</span></span></a></div></div>
+
+<p>Pour la régression linéaire, $\nabla\hL(\bw_t) = \frac2N\sum_n(\bw_t\T\bphi_n - y_n)\bphi_n$ (slide 37) : chaque point « tire » sur $\bw$ avec une force proportionnelle à son résidu. Le gradient complet est la <strong>moyenne</strong> de ces $N$ flèches. SGD n'en tire qu'un mini-batch $\mathcal B_t$ :</p>
+$$\bw_{t+1} = \bw_t - \gamma_t\,\bg_t,\qquad \bg_t = \nabla\hL_{\mathcal B_t}(\bw_t) = \frac1{|\mathcal B_t|}\sum_{i\in\mathcal B_t}\nabla\ell_i(\bw_t).$$
+<details class="objs" open><summary>Les objets en jeu</summary><dl>
+<dt>$\ell_i(\bw)$</dt><dd><span class="ty">fonction $\R^L\to\R_+$</span>La perte du seul exemple $i$ : $\ell_i(\bw) = (y_i - \bw\T\bphi_i)^2$. Le risque empirique est leur moyenne : $\hL = \frac1N\sum_i\ell_i$.</dd>
+<dt>$\nabla\ell_i(\bw)\in\R^L$</dt><dd><span class="ty">vecteur</span>Le gradient d'un seul exemple $= 2(\bw\T\bphi_i - y_i)\bphi_i$ : direction $\bphi_i$, longueur proportionnelle au résidu.</dd>
+<dt>$\mathcal B_t\subseteq\{1,\dots,N\}$</dt><dd><span class="ty">ensemble aléatoire d'indices</span>Le <b>mini-batch</b> tiré au pas $t$ ; $B = |\mathcal B_t|$ sa taille.</dd>
+<dt>$\hL_{\mathcal B}$</dt><dd><span class="ty">fonction</span>Le risque empirique restreint au mini-batch : une version bruitée de $\hL$.</dd>
+<dt>$\bg_t$</dt><dd><span class="ty">vecteur aléatoire</span>Le <b>gradient stochastique</b> : estimateur de $\nabla\hL(\bw_t)$ calculé sur $B$ exemples seulement.</dd>
+<dt>époque</dt><dd><span class="ty">unité de temps</span>(<em>epoch</em>) un passage complet sur les $N$ exemples = $N/B$ pas de SGD.</dd>
+</dl></details>
+
+<p>$|\mathcal B| = 1$ : SGD classique (= algorithme LMS de PRML) ; $1<|\mathcal B|\lt N$ : mini-batch ; $|\mathcal B| = N$ : GD. Dans la scène : fines flèches = gradients individuels $\nabla\ell_i$, flèche bleue = leur moyenne (gradient complet), flèche rose = gradient du mini-batch tiré. En moyenne sur les tirages, la rose <em>est</em> la bleue (sans biais), mais elle fluctue (variance).</p>
+<div data-scene="lr-sgd"></div>
+
+<div class="box thm"><div class="box-title">Justification de SGD — estimateur sans biais</div>
+Si $\mathcal B$ est tiré uniformément parmi les sous-ensembles de taille $B$ de $\{1,\dots,N\}$ : $\ \E_{\mathcal B}\big[\nabla\hL_{\mathcal B}(\btheta)\big] = \nabla\hL(\btheta)$.
+</div>
+<details class="proof"><summary>Preuve — sans biais via variables indicatrices <span class="hint">HW1 Q4.(4)</span></summary>
+<div class="proof-body">
+<div class="step">Écrivons la somme sur le batch avec des indicatrices : $\sum_{i\in\mathcal B}\nabla\ell_i = \sum_{i=1}^N\mathbb 1[i\in\mathcal B]\,\nabla\ell_i$.</div>
+<div class="step">Linéarité de l'espérance ($\nabla\ell_i(\btheta)$ est déterministe, seul $\mathcal B$ est aléatoire) : $\E\big[\frac1B\sum_i\mathbb 1[i\in\mathcal B]\nabla\ell_i\big] = \frac1B\sum_i P(i\in\mathcal B)\,\nabla\ell_i$.</div>
+<div class="step">$P(i\in\mathcal B)$ : parmi les $\binom NB$ sous-ensembles, ceux qui contiennent $i$ sont au nombre de $\binom{N-1}{B-1}$. Donc $P(i\in\mathcal B) = \binom{N-1}{B-1}/\binom NB = \frac BN$. (Intuition : $B$ places pour $N$ indices, par symétrie chacun a la même chance.)</div>
+<div class="step">D'où $\E_{\mathcal B}[\nabla\hL_{\mathcal B}] = \frac1B\sum_i\frac BN\nabla\ell_i = \frac1N\sum_i\nabla\ell_i = \nabla\hL(\btheta)$.</div>
+<div class="step"><span class="src extra">Hors slides</span> Variance (tirage sans remise) : $\Var[\bg] = \frac{N-B}{N-1}\cdot\frac{\sigma_\ell^2}{B}$ où $\sigma^2_\ell$ est la variance des gradients individuels. Elle décroît en $1/B$ et s'annule pour $B = N$.</div>
+<div class="qed">∎</div>
+</div></details>
+
+<div class="box intu"><div class="box-title">Avantages / inconvénients (slide 46)</div>
+✓ économe en mémoire et en calcul par pas ; ✓ sans biais ; ✗ variance élevée si $B$ petit (d'où des pas $\gamma_t$ décroissants pour converger exactement) ; ✓ le bruit peut aider à s'échapper de mauvais minima locaux (bien visible sur l'exemple 1D : avec du bruit, on peut franchir la bosse).
+</div>
+
+<!-- ===================================================================== -->
+<h2 id="summary"><span class="num">10</span>Résumé &amp; questions de la slide 47</h2>
+<div class="box q"><div class="box-title">Quel est le rôle des fonctions de base ?</div>
+<details class="proof"><summary>Réponse</summary><div class="proof-body"><p>Elles transforment l'entrée pour qu'un modèle <b>linéaire en $\bw$</b> capture des relations <b>non linéaires en $x$</b>. On garde la convexité et la forme close ; la difficulté est déplacée dans le choix (manuel) des features. Géométriquement : on relève les données dans un espace de features où une fonction linéaire (un hyperplan) suffit.</p></div></details></div>
+<div class="box q"><div class="box-title">Quel est le rôle de la régularisation ?</div>
+<details class="proof"><summary>Réponse</summary><div class="proof-body"><p>Limiter la complexité effective (préférer les petits $\|\bw\|$) pour réduire le sur-apprentissage : moins de variance au prix d'un peu de biais. Elle rend aussi le problème bien posé ($N\lambda\bI + \bPhi\T\bPhi\succ0$). Interprétation bayésienne : prior gaussien sur $\bw$ (MAP).</p></div></details></div>
+<div class="box q"><div class="box-title">Quels avantages à utiliser la norme $\ell_1$ ?</div>
+<details class="proof"><summary>Réponse</summary><div class="proof-body"><p>Solutions <b>parcimonieuses</b> (coefficients exactement nuls) : sélection de variables, interprétabilité, souvent bonne généralisation. Raison géométrique : la boule $\ell_1$ a des coins sur les axes ; raison analytique : le pli de $|w|$ en 0 (seuillage doux). Prix : objectif non différentiable, pas de forme close.</p></div></details></div>
+<div class="box q"><div class="box-title">Quel est l'intérêt de SGD ?</div>
+<details class="proof"><summary>Réponse</summary><div class="proof-body"><p>Coût par pas en $O(|\mathcal B|)$ au lieu de $O(N)$, mémoire réduite ; le gradient de mini-batch est un estimateur sans biais du gradient complet ; le bruit peut aider à éviter de mauvais optima. Inconvénient : variance → trajectoire bruitée, besoin de réduire $\gamma_t$.</p></div></details></div>
+
+<hr>
+<p class="c-dim" style="font-size:13px">Chapitre suivant : <a href="logistic-regression.html">régression logistique</a> · <a href="exercises.html">s'entraîner</a>.</p>
+
+</div></main>
+</div>
+
+<script src="lib/katex/katex.min.js"></script>
+<script src="lib/katex/contrib/auto-render.min.js"></script>
+<script src="lib/three.min.js"></script>
+<script src="js/core/math.js"></script>
+<script src="js/core/plot2d.js"></script>
+<script src="js/core/scene3d.js"></script>
+<script src="js/core/ui.js"></script>
+<script src="js/linreg/s1-setup.js"></script>
+<script src="js/linreg/s2-basis.js"></script>
+<script src="js/linreg/s3-ls.js"></script>
+<script src="js/linreg/s4-mle.js"></script>
+<script src="js/linreg/s5-overfit.js"></script>
+<script src="js/linreg/s6-ridge.js"></script>
+<script src="js/linreg/s7-lasso.js"></script>
+<script src="js/linreg/s8-optim.js"></script>
+<script>ML.page.boot();</script>
+</body>
+</html>
