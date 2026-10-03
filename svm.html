@@ -44,11 +44,100 @@
   <a class="src book" href="../Textbooks/Pattern%20Recognition%20and%20Machine%20Learning.pdf#page=313" target="_blank">PRML §6.1–6.2 kernels p.293–299</a>
   <a class="src book" href="../Textbooks/Pattern%20Recognition%20and%20Machine%20Learning.pdf#page=727" target="_blank">PRML annexe E (Lagrange) p.707</a>
 </div>
-<p>Plan des slides : <strong>(1)</strong> le classifieur à marge maximale ; <strong>(2)</strong> préliminaires d'optimisation sous contraintes — le Lagrangien et la dualité ; <strong>(3)</strong> la SVM : problème primal et dual, vecteurs de support, marge souple ; <strong>(4)</strong> du linéaire au non linéaire : le <em>kernel trick</em>. Fil conducteur géométrique : parmi tous les hyperplans qui séparent les données, choisir celui qui laisse la <strong>rue la plus large</strong> entre les deux classes.</p>
+<p>Ce chapitre répond à <strong>une seule question</strong> : <em>parmi tous les hyperplans qui séparent deux classes, lequel choisir, et comment le calculer ?</em> La réponse — laisser la <strong>rue la plus large</strong> entre les classes — donne un problème d'optimisation <em>sous contraintes</em> ; on apprend l'outil pour le résoudre (Lagrangien, dualité), puis on étend la méthode aux données non séparables et aux frontières non linéaires. Au début de chaque section, un encadré <span class="c-teal"><b>Où on en est</b></span> fait le point.</p>
+
+<h2 id="roadmap">Feuille de route</h2>
+<div class="sources"><a class="src slides" href="../Slides/4-svms.pdf#page=2" target="_blank">Slides p.2 (plan)</a></div>
+<p>Les slides découpent le cours en quatre blocs : <b>(Modèle)</b> le classifieur à marge maximale (§1–2) ; <b>(Préliminaires)</b> l'optimisation sous contraintes (§3) ; <b>(Apprentissage)</b> la SVM par le primal et le dual, puis la marge souple (§4–5) ; <b>(Modèle)</b> du linéaire au non linéaire avec les noyaux (§6). La chaîne complète, cliquable :</p>
+<div class="flow">
+<a class="st" href="#margin"><b>① Critère · §1</b>la marge géométrique $\rho_f = \min_i\frac{|f(\bx_i)|}{\|\bw\|}$<i>distance du point le plus proche</i></a><div class="ar">→</div>
+<a class="st" href="#maxmargin"><b>② Problème · §2</b>$\min\frac12\|\bw\|^2$ s.c. $y_i(\bw\T\bx_i+b)\ge1$<i>grâce à l'invariance d'échelle</i></a><div class="ar">→</div>
+<a class="st" href="#constrained"><b>③ Outil · §3</b>Lagrangien et dualité<i>contraintes → jeu $\min\max$</i></a><div class="ar">→</div>
+<a class="st" href="#dual"><b>④ Résolution · §4</b>dual en $\boldsymbol\alpha$, $\bw = \sum_i\alpha_iy_i\bx_i$<i>seuls les vecteurs de support comptent</i></a><div class="ar">→</div>
+<a class="st" href="#soft"><b>⑤ Non séparable · §5</b>marge souple $\xi_i$, constante $C$<i>= hinge loss + régularisation</i></a><div class="ar">→</div>
+<a class="st goal" href="#kernel"><b>⑥ Non linéaire · §6</b>$\bx_i\T\bx_j\ \to\ \kappa(\bx_i,\bx_j)$<i>kernel trick</i></a>
+</div>
+
+<h3 id="roadmap-why">Le raisonnement, maillon par maillon</h3>
+<ol class="plan">
+<li><span class="n">①</span><b>Définir ce qu'est un « bon » séparateur.</b> Si les données sont séparables, une infinité d'hyperplans les séparent. On préfère celui qui est le plus loin des points les plus proches : la <b>marge géométrique</b>. <span class="why">Il faut d'abord savoir calculer une distance à un hyperplan : $|\bw\T\bx+b|/\|\bw\|$.</span></li>
+<li><span class="n">②</span><b>Écrire le problème.</b> « Maximiser la plus petite distance » est un max-min peu pratique. <span class="why">Comme $(\lambda\bw,\lambda b)$ décrit le même hyperplan, on peut fixer l'échelle pour que le point le plus proche ait $y_i(\bw\T\bx_i+b) = 1$ ; la marge vaut alors $1/\|\bw\|$, et le problème devient : minimiser $\frac12\|\bw\|^2$ sous $N$ contraintes. → Un problème <b>avec contraintes</b> : la descente de gradient ne suffit plus.</span></li>
+<li><span class="n">③</span><b>Apprendre l'outil.</b> Le Lagrangien remplace chaque contrainte par une pénalité $\lambda_ig_i(\bx)$ avec $\lambda_i\ge0$. <span class="why">Le problème contraint devient un jeu $\min_\bx\max_{\boldsymbol\lambda}$ ; en échangeant l'ordre on obtient le problème <b>dual</b>, toujours une borne inférieure (dualité faible), égal à l'optimum sous des conditions qui sont vérifiées pour la SVM (dualité forte, KKT).</span></li>
+<li><span class="n">④</span><b>Résoudre la SVM par le dual.</b> On minimise d'abord en $(\bw,b)$ (formule close), on réinjecte, on obtient un problème en $\boldsymbol\alpha$ seulement. <span class="why">Résultats : $\bw^* = \sum_i\alpha_i^*y_i\bx_i$ ; seuls les points avec $\alpha_i^*>0$, sur le bord de la rue, comptent (vecteurs de support) ; et les données n'apparaissent que par des produits scalaires $\bx_i\T\bx_j$.</span></li>
+<li><span class="n">⑤</span><b>Relâcher la séparabilité.</b> Si aucun hyperplan ne sépare, le problème du §2 n'a pas de solution. <span class="why">On autorise chaque point à violer la marge de $\xi_i\ge0$, payé $C\xi_i$. Le dual change à peine ($0\le\alpha_i\le C$), et le problème équivaut à minimiser $\frac12\|\bw\|^2 + C\sum_i\max\{0,1-y_if(\bx_i)\}$ : la <b>hinge loss</b>, une perte de substitution comme la cross-entropy du chapitre 2.</span></li>
+<li><span class="n">⑥</span><b>Passer au non linéaire.</b> Comme au chapitre 1, on remplace $\bx$ par des features $\bphi(\bx)$. <span class="why">Le dual ne demande que les produits $\bphi(\bx_i)\T\bphi(\bx_j)$ : on les remplace par un noyau $\kappa(\bx_i,\bx_j)$ calculé directement, même si $\bphi$ est de dimension infinie (noyau gaussien).</span></li>
+</ol>
+
+<div class="box intu"><div class="box-title">À la fin du chapitre, tu dois savoir…</div>
+<ul>
+<li>prouver que $\bw$ est normal à l'hyperplan et que la distance vaut $|f(\bx)|/\|\bw\|$ ;</li>
+<li>passer du max-min au problème canonique $\min\frac12\|\bw\|^2$ s.c. $y_i(\bw\T\bx_i+b)\ge1$ ;</li>
+<li>écrire un Lagrangien, la fonction duale, et prouver la dualité faible par l'inégalité minimax ;</li>
+<li>dériver le dual de la SVM, retrouver $\bw^*$, $b^*$ et reconnaître les vecteurs de support (complémentarité) ;</li>
+<li>écrire la SVM à marge souple, son dual ($0\le\alpha_i\le C$) et sa forme hinge ;</li>
+<li>expliquer le kernel trick et évaluer un noyau polynomial ou RBF.</li>
+</ul></div>
+
+<h2 id="notations">Notations du chapitre</h2>
+<p>Toutes les lettres utilisées dans la page (et dans les slides), au même endroit. Attention, plusieurs lettres changent de sens en cours de route : voir l'encadré qui suit le tableau.</p>
+<div class="notation-wrap"><table class="notation">
+<thead><tr><th>Symbole</th><th>Se lit / signifie</th><th>Nature</th><th>Où</th></tr></thead>
+<tbody>
+<tr class="grp"><td colspan="4">Données</td></tr>
+<tr><td>$N,\ D$</td><td>nombre d'exemples ; dimension des entrées</td><td>entiers</td><td class="where">partout</td></tr>
+<tr><td>$\bx_i$</td><td>$i$-ième exemple (aussi indicé $j$ ou $n$)</td><td>$\R^D$</td><td class="where">§1, §2, §4 →</td></tr>
+<tr><td>$y_i$</td><td>étiquette, <b>obligatoirement $\pm1$</b> : « bien classé » s'écrit $y_if(\bx_i)>0$</td><td>$\{-1,+1\}$</td><td class="where">partout</td></tr>
+<tr class="grp"><td colspan="4">Classifieur et marge (§1–2)</td></tr>
+<tr><td>$\bw,\ b$</td><td>vecteur normal à l'hyperplan ; biais</td><td>$\R^D$, $\R$</td><td class="where">partout</td></tr>
+<tr><td>$f(\bx) = \bw\T\bx+b$</td><td>score ; la prédiction est son signe</td><td>réel</td><td class="where">partout</td></tr>
+<tr><td>$\{\bx : f(\bx) = 0\}$</td><td>l'hyperplan séparateur (une droite en 2D)</td><td>sous-ensemble de $\R^D$</td><td class="where">§1 →</td></tr>
+<tr><td>$\rho_f(\bx)$</td><td>marge géométrique d'un point : sa distance à l'hyperplan, $|f(\bx)|/\|\bw\|$</td><td>réel $\ge0$</td><td class="where">§1</td></tr>
+<tr><td>$\rho_f,\ \rho$</td><td>marge sur l'échantillon $\min_i\rho_f(\bx_i)$ ; la marge maximale sur tous les $f$</td><td>réels $\ge0$</td><td class="where">§1, §2</td></tr>
+<tr><td>$y_if(\bx_i)$</td><td>marge <b>fonctionnelle</b> (le $m$ du chapitre 2), qui dépend de l'échelle de $\bw$</td><td>réel</td><td class="where">§2</td></tr>
+<tr><td>$\bx_p,\ \tau$</td><td>projection orthogonale de $\bx$ sur l'hyperplan ; déplacement signé</td><td>$\R^D$ ; réel</td><td class="where">§1 (preuve)</td></tr>
+<tr><td>$\lambda$ (§2)</td><td><b>facteur d'échelle</b> $>0$ : $(\lambda\bw,\lambda b)$ décrit le même hyperplan</td><td>réel $>0$</td><td class="where">§2</td></tr>
+<tr class="grp"><td colspan="4">Optimisation sous contraintes (§3 — cadre général)</td></tr>
+<tr><td>$\bx$ (§3)</td><td><b>la variable qu'on optimise</b> (pas un exemple !)</td><td>$\R^D$</td><td class="where">§3</td></tr>
+<tr><td>$L(\bx)$</td><td>la fonction objectif à minimiser</td><td>$\R^D\to\R$</td><td class="where">§3</td></tr>
+<tr><td>$g_i(\bx)\le0,\ h_j(\bx) = 0$</td><td>contraintes d'inégalité ($i = 1..m$, ou $M$) ; d'égalité ($j = 1..P$)</td><td>fonctions $\R^D\to\R$</td><td class="where">§3</td></tr>
+<tr><td>$\delta_{\R_-},\ J(\bx)$</td><td>indicatrice « 0 si $\le0$, $+\infty$ sinon » ; objectif + indicatrices des contraintes</td><td>$\{0,+\infty\}$ ; réel ou $+\infty$</td><td class="where">§3</td></tr>
+<tr><td>$\mathfrak L(\bx,\boldsymbol\lambda)$</td><td><b>Lagrangien</b> $L(\bx)+\sum_i\lambda_ig_i(\bx)$ (les slides l'écrivent $\mathcal L$)</td><td>réel</td><td class="where">§3 →</td></tr>
+<tr><td>$\lambda_i,\ \nu_j$ (§3)</td><td>multiplicateurs de Lagrange : $\lambda_i\ge0$ (inégalités), $\nu_j\in\R$ (égalités)</td><td>réels</td><td class="where">§3</td></tr>
+<tr><td>$D(\boldsymbol\lambda)$</td><td>fonction duale $\min_\bx\mathfrak L(\bx,\boldsymbol\lambda)$</td><td>réel</td><td class="where">§3, §4</td></tr>
+<tr><td>$p^*,\ d^*$</td><td>valeur optimale du primal ; du dual. Dualité faible : $d^*\le p^*$</td><td>réels</td><td class="where">§3</td></tr>
+<tr><td>$\rho(x,y)$ (§3)</td><td>une fonction quelconque de deux variables, dans l'inégalité minimax</td><td>réel</td><td class="where">§3</td></tr>
+<tr class="grp"><td colspan="4">SVM primal / dual (§4–5)</td></tr>
+<tr><td>$\alpha_i$</td><td>multiplicateur de la contrainte du point $i$ (= les $\lambda_i$ du §3, renommés)</td><td>réel $\ge0$</td><td class="where">§4 →</td></tr>
+<tr><td>$\bw^*,\ b^*,\ \boldsymbol\alpha^*$</td><td>solutions optimales</td><td>—</td><td class="where">§4</td></tr>
+<tr><td>vecteur de support</td><td>point $\bx_i$ avec $\alpha_i^*>0$ ; il est sur le bord de la rue ($y_if(\bx_i) = 1$)</td><td>exemple</td><td class="where">§4</td></tr>
+<tr><td>$K_{ij}$</td><td>matrice de Gram $\bx_i\T\bx_j$ (puis $\kappa(\bx_i,\bx_j)$)</td><td>$\R^{N\times N}$</td><td class="where">§4, §6</td></tr>
+<tr><td>$\xi_i$</td><td>variable d'écart (<em>slack</em>) : de combien le point $i$ viole la marge</td><td>réel $\ge0$</td><td class="where">§5</td></tr>
+<tr><td>$C$</td><td>prix d'une unité d'écart ; grand $C$ = peu de régularisation</td><td>réel $>0$</td><td class="where">§5 →</td></tr>
+<tr><td>$\beta_i$</td><td>multiplicateur de la contrainte $\xi_i\ge0$</td><td>réel $\ge0$</td><td class="where">§5</td></tr>
+<tr><td>$t_i,\ \ell_{\text{hinge}}(t)$</td><td>$t_i = y_i(\bw\T\bx_i+b)$ ; hinge loss $\max\{0,1-t\}$</td><td>réels</td><td class="where">§5</td></tr>
+<tr class="grp"><td colspan="4">Noyaux (§6)</td></tr>
+<tr><td>$\bphi(\bx)$</td><td>vecteur de features (comme au chapitre 1), éventuellement de dimension infinie</td><td>vecteur</td><td class="where">§6</td></tr>
+<tr><td>$\kappa(\bx,\bx')$</td><td>noyau : remplace $\bphi(\bx)\T\bphi(\bx')$, mesure de similarité</td><td>réel</td><td class="where">§6</td></tr>
+<tr><td>$\sigma$</td><td>largeur du noyau gaussien (RBF)</td><td>réel $>0$</td><td class="where">§6</td></tr>
+</tbody></table></div>
+
+<div class="box warn"><div class="box-title">Pièges de notation (ils viennent des slides)</div>
+<ol>
+<li><b>$\lambda$ a deux sens</b> : au §2 c'est un <b>facteur d'échelle</b> ($\lambda\bw,\lambda b$) ; au §3 ce sont les <b>multiplicateurs de Lagrange</b> $\lambda_i\ge0$. Pour la SVM (§4), les multiplicateurs s'appellent $\alpha_i$.</li>
+<li><b>Au §3, $\bx$ n'est pas un exemple</b> : c'est la variable d'optimisation générique (les slides suivent le livre MML). Au §4, ce rôle est tenu par $(\bw,b)$ et $\bx_i$ redevient un exemple.</li>
+<li><b>$L$ et $\mathfrak L$</b> : $L(\bx)$ est l'objectif, $\mathfrak L$ (écrit $\mathcal L$ dans les slides) le Lagrangien. Au chapitre 2, $L$ était la log-vraisemblance négative.</li>
+<li><b>$D$ a trois sens</b> : le jeu de données $\mathcal D$, la dimension $D$, la fonction duale $D(\boldsymbol\lambda)$ ou $D(\boldsymbol\alpha)$.</li>
+<li><b>$\rho$</b> : la marge (§1–2), mais $\rho(x,y)$ est une fonction quelconque dans l'inégalité minimax (§3).</li>
+<li><b>$\sigma$</b> : largeur du noyau RBF. Au chapitre 1 c'était l'écart-type du bruit, au chapitre 2 la sigmoïde.</li>
+<li><b>Étiquettes $\pm1$</b>, alors que la vraisemblance du chapitre 2 utilisait $\{0,1\}$.</li>
+<li><b>$C$ multiplie la perte</b>, alors que $\lambda$ multipliait la pénalité dans le ridge : grand $C$ ⇔ petit $\lambda$.</li>
+<li><b>$J(\bx)$</b> (objectif + indicatrices, §3) n'a rien à voir avec le $J(\bw)$ de la slide 33 du chapitre 2. Les indices $i$, $j$, $n$ et les nombres de contraintes $m$, $M$ sont aussi mélangés d'une slide à l'autre.</li>
+</ol></div>
 
 <!-- ===================================================================== -->
 <h2 id="margin"><span class="num">1</span>Quel hyperplan séparateur choisir ? La marge</h2>
 <div class="sources"><a class="src slides" href="../Slides/4-svms.pdf#page=3" target="_blank">Slides p.3–6</a><a class="src book" href="../Textbooks/Pattern%20Recognition%20and%20Machine%20Learning.pdf#page=346" target="_blank">PRML §7.1 p.326–327</a></div>
+<div class="box road"><div class="box-title">Où on en est</div><div class="road-row"><span class="rk ok">Acquis</span><div>Chapitre 2 : un classifieur linéaire $\operatorname{sign}(\bw\T\bx+b)$ ; la régression logistique en trouve un en minimisant la cross-entropy.</div></div><div class="road-row"><span class="rk q">Il manque</span><div>Si les données sont séparables, une infinité d'hyperplans les séparent. Lequel est le « meilleur », et comment le mesurer ?</div></div><div class="road-row"><span class="rk go">Cette partie</span><div>On définit la <b>marge géométrique</b> (distance du point le plus proche à l'hyperplan) et on prouve la formule de distance $|f(\bx)|/\|\bw\|$.</div></div></div>
 <div class="vids"><div class="vids-title">▶ Vidéos<span>en anglais · s'ouvrent sur YouTube</span></div><div class="vids-grid"><a class="vid" href="https://www.youtube.com/watch?v=_YPScrckx28" target="_blank" rel="noopener"><span class="vid-thumb">▶<img src="https://i.ytimg.com/vi/_YPScrckx28/mqdefault.jpg" loading="lazy" alt="" onerror="this.remove()"></span><span class="vid-body"><span class="vid-ch">Visually Explained</span><span class="vid-t" style="display:block">Support Vector Machine (SVM) in 2 minutes</span><span class="vid-why" style="display:block">L'idée de la marge maximale en 2 minutes, très visuelle.</span></span></a><a class="vid" href="https://www.youtube.com/watch?v=efR1C6CvhmE" target="_blank" rel="noopener"><span class="vid-thumb">▶<img src="https://i.ytimg.com/vi/efR1C6CvhmE/mqdefault.jpg" loading="lazy" alt="" onerror="this.remove()"></span><span class="vid-body"><span class="vid-ch">StatQuest</span><span class="vid-t" style="display:block">Support Vector Machines Part 1 (of 3): Main Ideas!!!</span><span class="vid-why" style="display:block">Marge, classifieur à marge souple et vecteurs de support, sans équations.</span></span></a><a class="vid" href="https://www.youtube.com/watch?v=_PwhiWxHK8o" target="_blank" rel="noopener"><span class="vid-thumb">▶<img src="https://i.ytimg.com/vi/_PwhiWxHK8o/mqdefault.jpg" loading="lazy" alt="" onerror="this.remove()"></span><span class="vid-body"><span class="vid-ch">MIT OCW — Patrick Winston</span><span class="vid-t" style="display:block">16. Learning: Support Vector Machines</span><span class="vid-why" style="display:block">Le cours classique du MIT : de la « rue la plus large » au dual, à la main au tableau.</span></span></a></div></div>
 
 <p>Pour des données linéairement séparables, il existe une infinité d'hyperplans séparateurs (le perceptron ou la régression logistique en rendent un parmi d'autres). Intuition : préférer celui qui est <strong>le plus loin des points les plus proches</strong>. Un petit bruit sur un point (ou un nouveau point de test proche des données) ne le fera pas basculer du mauvais côté : c'est une forme de robustesse, et la théorie de l'apprentissage montre qu'une grande marge contrôle l'erreur de généralisation.</p>
@@ -93,6 +182,7 @@ Le mot « hyperplan » est réservé au premier objet. Dans chaque figure, le bo
 <!-- ===================================================================== -->
 <h2 id="maxmargin"><span class="num">2</span>Maximisation de la marge</h2>
 <div class="sources"><a class="src slides" href="../Slides/4-svms.pdf#page=7" target="_blank">Slides p.7–11</a><a class="src book" href="../Textbooks/Pattern%20Recognition%20and%20Machine%20Learning.pdf#page=347" target="_blank">PRML éq. 7.3–7.6 p.327–328</a></div>
+<div class="box road"><div class="box-title">Où on en est</div><div class="road-row"><span class="rk ok">Acquis</span><div>La marge $\rho_f = \min_i|f(\bx_i)|/\|\bw\|$ d'un classifieur.</div></div><div class="road-row"><span class="rk q">Il manque</span><div>Transformer « choisir l'hyperplan de marge maximale » en un problème d'optimisation qu'on sait écrire proprement.</div></div><div class="road-row"><span class="rk go">Cette partie</span><div>Grâce à l'invariance d'échelle, le max-min devient : minimiser $\frac12\|\bw\|^2$ sous les contraintes $y_i(\bw\T\bx_i+b)\ge1$. C'est la SVM (marge dure).</div></div></div>
 <p>On suppose les données <strong>linéairement séparables</strong> (relâché au §5). On cherche l'hyperplan séparateur de marge maximale :</p>
 $$\rho = \max_{f:\ \forall i,\ y_if(\bx_i)\ge0}\ \rho_f = \max_{f:\ \forall i,\ y_if(\bx_i)\ge0}\ \min_j\ \rho_f(\bx_j).$$
 <div class="box thm"><div class="box-title">Problème de maximisation de la marge (forme canonique)</div>
@@ -136,6 +226,7 @@ Après normalisation, les droites $\lambda^*f(\bx) = \pm1$ passent par le(s) poi
 <!-- ===================================================================== -->
 <h2 id="constrained"><span class="num">3</span>Optimisation sous contraintes : Lagrangien et dualité</h2>
 <div class="sources"><a class="src slides" href="../Slides/4-svms.pdf#page=13" target="_blank">Slides p.10–18</a><a class="src book" href="../Textbooks/Pattern%20Recognition%20and%20Machine%20Learning.pdf#page=727" target="_blank">PRML annexe E p.707–710</a></div>
+<div class="box road"><div class="box-title">Où on en est</div><div class="road-row"><span class="rk ok">Acquis</span><div>Le problème de la SVM : un objectif simple, mais $N$ <b>contraintes</b>.</div></div><div class="road-row"><span class="rk q">Il manque</span><div>La descente de gradient ne sait pas gérer des contraintes. Il faut un outil général.</div></div><div class="road-row"><span class="rk go">Cette partie</span><div>Le <b>Lagrangien</b> (une pénalité $\lambda_ig_i$ par contrainte), la fonction duale, la dualité faible (par l'inégalité minimax) et forte, et les conditions KKT. Ici les notations sont <b>génériques</b> : $\bx$ est la variable optimisée, pas un exemple.</div></div></div>
 <div class="box def"><div class="box-title">Problème primal</div>
 $$\min_{\bx}\ L(\bx)\qquad\text{s.c.}\qquad g_i(\bx)\le0,\quad i = 1,\dots,m.$$
 </div>
@@ -216,9 +307,10 @@ $$\underbrace{\nabla L(\bx^*) + \sum_i\lambda_i^*\nabla g_i(\bx^*) = 0}_{\text{s
 <!-- ===================================================================== -->
 <h2 id="dual"><span class="num">4</span>La SVM par le dual</h2>
 <div class="sources"><a class="src slides" href="../Slides/4-svms.pdf#page=24" target="_blank">Slides p.24–30</a><a class="src book" href="../Textbooks/Pattern%20Recognition%20and%20Machine%20Learning.pdf#page=348" target="_blank">PRML éq. 7.7–7.19 p.328–330</a></div>
+<div class="box road"><div class="box-title">Où on en est</div><div class="road-row"><span class="rk ok">Acquis</span><div>Le primal de la SVM (§2) et l'outil Lagrangien / dual (§3).</div></div><div class="road-row"><span class="rk q">Il manque</span><div>Appliquer l'outil à la SVM et en tirer le classifieur $\bw^*$, $b^*$.</div></div><div class="road-row"><span class="rk go">Cette partie</span><div>On dérive le problème dual en $\boldsymbol\alpha$, on reconstruit $\bw^*$ et $b^*$, et on comprend pourquoi seuls quelques points (les <b>vecteurs de support</b>) déterminent la solution.</div></div></div>
 <div class="vids"><div class="vids-title">▶ Vidéos<span>en anglais · s'ouvrent sur YouTube</span></div><div class="vids-grid"><a class="vid" href="https://www.youtube.com/watch?v=lDwow4aOrtg" target="_blank" rel="noopener"><span class="vid-thumb">▶<img src="https://i.ytimg.com/vi/lDwow4aOrtg/mqdefault.jpg" loading="lazy" alt="" onerror="this.remove()"></span><span class="vid-body"><span class="vid-ch">Stanford CS229 — Andrew Ng</span><span class="vid-t" style="display:block">Lecture 6: Support Vector Machines</span><span class="vid-why" style="display:block">Cours complet : marge géométrique, problème primal, dual de la SVM.</span></span></a></div></div>
 
-<div class="box intu"><div class="box-title">Où on en est — ce qu'on cherche</div>
+<div class="box intu"><div class="box-title">Ce qu'on cherche, précisément</div>
 <p><b>Ce qu'on a</b> (§2) : le problème <b>primal</b> $\ \min_{\bw,b}\frac12\|\bw\|^2$ s.c. $y_i(\bw\T\bx_i+b)\ge1$ pour tout $i$. Ses inconnues sont $\bw\in\R^D$ et $b$ ; il a $N$ contraintes, une par point.</p>
 <p><b>Ce qu'on veut à la fin</b> : le classifieur $f(\bx) = \bw^{*\top}\bx + b^*$, c'est-à-dire les deux nombres/vecteurs $\bw^*$ et $b^*$.</p>
 <p><b>L'idée du dual</b> : au lieu de chercher $\bw$ directement, on cherche <b>un poids $\alpha_i\ge0$ par point</b> (le « prix » de sa contrainte). On obtient un problème en $\boldsymbol\alpha$ seulement, aux contraintes très simples, où les données n'apparaissent que par des produits scalaires $\bx_i\T\bx_j$. On le résout, puis on <b>reconstruit</b> $\bw^*$ et $b^*$ à partir de $\boldsymbol\alpha^*$.</p>
@@ -311,6 +403,7 @@ Puis $\bw^* = \sum_i\alpha_i^*y_i\bx_i$ et, pour tout vecteur de support $\bx_i$
 <!-- ===================================================================== -->
 <h2 id="soft"><span class="num">5</span>Marge souple : variables d'écart et hinge loss</h2>
 <div class="sources"><a class="src slides" href="../Slides/4-svms.pdf#page=31" target="_blank">Slides p.31–37</a><a class="src book" href="../Textbooks/Pattern%20Recognition%20and%20Machine%20Learning.pdf#page=351" target="_blank">PRML §7.1.1 p.331–336</a></div>
+<div class="box road"><div class="box-title">Où on en est</div><div class="road-row"><span class="rk ok">Acquis</span><div>La SVM à marge dure, résolue par le dual.</div></div><div class="road-row"><span class="rk q">Il manque</span><div>Elle suppose les données séparables. Sinon, aucun $(\bw,b)$ ne vérifie les contraintes : pas de solution.</div></div><div class="road-row"><span class="rk go">Cette partie</span><div>On autorise des violations $\xi_i\ge0$, payées $C\xi_i$ (marge souple). Le dual change à peine, et on voit que c'est la même chose que minimiser la <b>hinge loss</b> + une régularisation, comme les pertes de substitution du chapitre 2.</div></div></div>
 <p>Données non séparables : aucune solution admissible. On autorise chaque point à violer la marge d'une quantité $\xi_i\ge0$ (<em>slack</em>) : $y_n(\bw\T\bx_n + b)\ge1-\xi_n$. $\xi_n$ mesure (en unités de $1/\|\bw\|$) de combien le point a franchi le bord de <em>son</em> côté de la rue.</p>
 <div class="box def"><div class="box-title">SVM à marge souple (<em>soft margin</em>) — primal</div>
 $$\min_{\bw,b,\boldsymbol\xi}\ \frac12\|\bw\|^2 + C\sum_{i=1}^N\xi_i\qquad\text{s.c.}\qquad y_i(\bw\T\bx_i+b)\ge1-\xi_i,\quad\xi_i\ge0.$$
@@ -353,6 +446,7 @@ $$\min_{\bw,b}\ \frac12\|\bw\|^2 + C\sum_{i=1}^N\ell_{\text{hinge}}\big(y_i(\bw\
 <!-- ===================================================================== -->
 <h2 id="kernel"><span class="num">6</span>Du linéaire au non linéaire : le kernel trick</h2>
 <div class="sources"><a class="src slides" href="../Slides/4-svms.pdf#page=39" target="_blank">Slides p.39–43</a><a class="src book" href="../Textbooks/Pattern%20Recognition%20and%20Machine%20Learning.pdf#page=313" target="_blank">PRML §6.1–6.2 p.293–299</a></div>
+<div class="box road"><div class="box-title">Où on en est</div><div class="road-row"><span class="rk ok">Acquis</span><div>La SVM à marge souple, dont le dual ne dépend des données que par les produits $\bx_i\T\bx_j$.</div></div><div class="road-row"><span class="rk q">Il manque</span><div>Des frontières <b>non linéaires</b>, sans payer le coût de features de très grande dimension.</div></div><div class="road-row"><span class="rk go">Cette partie</span><div>Remplacer $\bx$ par $\bphi(\bx)$ (comme au chapitre 1), puis remplacer directement $\bphi(\bx_i)\T\bphi(\bx_j)$ par un noyau $\kappa(\bx_i,\bx_j)$ : le kernel trick, et le noyau gaussien (RBF).</div></div></div>
 <div class="vids"><div class="vids-title">▶ Vidéos<span>en anglais · s'ouvrent sur YouTube</span></div><div class="vids-grid"><a class="vid" href="https://www.youtube.com/watch?v=Q7vT0--5VII" target="_blank" rel="noopener"><span class="vid-thumb">▶<img src="https://i.ytimg.com/vi/Q7vT0--5VII/mqdefault.jpg" loading="lazy" alt="" onerror="this.remove()"></span><span class="vid-body"><span class="vid-ch">Visually Explained</span><span class="vid-t" style="display:block">The Kernel Trick in Support Vector Machine (SVM)</span><span class="vid-why" style="display:block">Le kernel trick en animation : relever les données pour les séparer.</span></span></a><a class="vid" href="https://www.youtube.com/watch?v=Toet3EiSFcM" target="_blank" rel="noopener"><span class="vid-thumb">▶<img src="https://i.ytimg.com/vi/Toet3EiSFcM/mqdefault.jpg" loading="lazy" alt="" onerror="this.remove()"></span><span class="vid-body"><span class="vid-ch">StatQuest</span><span class="vid-t" style="display:block">Support Vector Machines Part 2: The Polynomial Kernel</span><span class="vid-why" style="display:block">Le noyau polynomial et les produits scalaires dans l'espace relevé.</span></span></a><a class="vid" href="https://www.youtube.com/watch?v=8NYoQiRANpg" target="_blank" rel="noopener"><span class="vid-thumb">▶<img src="https://i.ytimg.com/vi/8NYoQiRANpg/mqdefault.jpg" loading="lazy" alt="" onerror="this.remove()"></span><span class="vid-body"><span class="vid-ch">Stanford CS229 — Andrew Ng</span><span class="vid-t" style="display:block">Lecture 7: Kernels</span><span class="vid-why" style="display:block">Cours complet sur les noyaux (feature maps, kernel trick, noyaux valides).</span></span></a></div></div>
 
 <p>Comme au chapitre 1, on peut remplacer $\bx$ par des features $\bphi(\bx)$. Le dual à marge souple devient :</p>
@@ -403,6 +497,10 @@ Vaut 1 si $\bx_i = \bx_j$, décroît vers 0 avec la distance. Sa feature map est
 
 <!-- ===================================================================== -->
 <h2 id="summary"><span class="num">7</span>Résumé &amp; questions de la slide 44</h2>
+<div class="box thm"><div class="box-title">Tout le chapitre en une chaîne</div>
+$$\underbrace{\max_f\min_i\frac{y_if(\bx_i)}{\|\bw\|}}_{\text{§1 : marge}}\ \xrightarrow{\text{échelle}}\ \underbrace{\min_{\bw,b}\tfrac12\|\bw\|^2\ \text{s.c.}\ y_i(\bw\T\bx_i+b)\ge1}_{\text{§2 : primal}}\ \xrightarrow{\text{Lagrangien (§3)}}\ \underbrace{\max_{\boldsymbol\alpha\ge0,\ \sum_i\alpha_iy_i = 0}\ \sum_i\alpha_i-\tfrac12\sum_{i,j}\alpha_i\alpha_jy_iy_j\bx_i\T\bx_j}_{\text{§4 : dual}}$$
+$$\xrightarrow{}\ \underbrace{\bw^* = \sum_i\alpha_i^*y_i\bx_i}_{\text{vecteurs de support}}\ \xrightarrow{\text{non séparable}}\ \underbrace{0\le\alpha_i\le C\ \Leftrightarrow\ \tfrac12\|\bw\|^2+C\sum_i\max\{0,1-y_if(\bx_i)\}}_{\text{§5 : marge souple = hinge}}\ \xrightarrow{\text{non linéaire}}\ \underbrace{\bx_i\T\bx_j\to\kappa(\bx_i,\bx_j)}_{\text{§6 : noyaux}}$$
+</div>
 <div class="box q"><div class="box-title">Comment formuler l'apprentissage à marge maximale ?</div>
 <details class="proof"><summary>Réponse</summary><div class="proof-body"><p>Maximiser la distance du point le plus proche à l'hyperplan, $\max_f\min_j\frac{y_jf(\bx_j)}{\|\bw\|}$ ; par invariance d'échelle on fixe $\min_jy_jf(\bx_j) = 1$, ce qui donne $\min\frac12\|\bw\|^2$ s.c. $y_i(\bw\T\bx_i+b)\ge1$ — un programme quadratique convexe. Version non séparable : ajouter les écarts $\xi_i$ et $C\sum\xi_i$, soit hinge loss + régularisation $\ell_2$.</p></div></details></div>
 <div class="box q"><div class="box-title">Quel lien entre le primal et le dual ?</div>

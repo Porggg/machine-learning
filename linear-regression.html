@@ -46,7 +46,94 @@
   <a class="src hw" href="../Homework/Homework_1.pdf" target="_blank">HW1 (dû le 29/09)</a>
 </div>
 
-<p>Ce chapitre suit le plan des slides : <strong>(1)</strong> le problème de régression, <strong>(2)</strong> la régression linéaire ordinaire avec fonctions de base (<em>basis functions</em>), <strong>(3)</strong> le ridge (sur-apprentissage et régularisation), <strong>(4)</strong> le lasso (parcimonie, <em>sparsity</em>), <strong>(5)</strong> l'optimisation par gradient (GD, momentum, SGD). Chaque idée a une scène manipulable : fais bouger les paramètres <em>avant</em> de lire les preuves, l'intuition vient de là.</p>
+<p>Ce chapitre répond à <strong>une seule question</strong> : <em>comment prédire un nombre réel $y$ à partir d'une entrée $\bx$, en apprenant à partir d'exemples ?</em> Il construit la réponse complète — le critère, le modèle, la formule, sa justification, ses limites et leurs remèdes — puis l'outil d'optimisation qui servira dans tous les chapitres suivants. Chaque section répond au problème laissé ouvert par la précédente ; au début de chacune, un encadré <span class="c-teal"><b>Où on en est</b></span> fait le point.</p>
+
+<h2 id="roadmap">Feuille de route</h2>
+<div class="sources"><a class="src slides" href="../Slides/2-linear-regression.pdf#page=2" target="_blank">Slides p.2 (plan)</a></div>
+<p>Les slides découpent le cours en cinq blocs : <b>la régression</b> (§1), <b>la régression linéaire et les fonctions de base</b> (§2–4), <b>le ridge</b> (§5–7), <b>le lasso</b> (§8), <b>les méthodes de gradient</b> (§9). La chaîne complète, cliquable :</p>
+<div class="flow">
+<a class="st" href="#setup"><b>① But · §1</b>minimiser la MSE $\E[(y-f(\bx))^2]$<i>meilleur $f$ : $\E[y\mid\bx]$, mais $p(\bx,y)$ inconnue</i></a><div class="ar">→</div>
+<a class="st" href="#basis"><b>② Modèle · §2</b>$f(\bx) = \bw\T\bphi(\bx)$<i>linéaire en $\bw$, pas forcément en $\bx$</i></a><div class="ar">→</div>
+<a class="st" href="#ls"><b>③ Apprentissage · §3</b>MSE empirique ⇒ $\bw_{\text{LS}} = (\bPhi\T\bPhi)^{-1}\bPhi\T\by$<i>une projection orthogonale</i></a><div class="ar">→</div>
+<a class="st" href="#mle"><b>④ Justification · §4</b>bruit gaussien ⇒ MLE = moindres carrés<i>la perte carrée a une hypothèse cachée</i></a><div class="ar">→</div>
+<a class="st" href="#overfit"><b>⑤ Limite · §5</b>trop de paramètres ⇒ sur-apprentissage<i>train ↓, test ↑</i></a><div class="ar">→</div>
+<a class="st" href="#ridge"><b>⑥ Remèdes · §6–8</b>pénaliser $\|\bw\|^2$ (ridge = MAP) ou $\|\bw\|_1$ (lasso)<i>λ règle le compromis</i></a><div class="ar">→</div>
+<a class="st goal" href="#optim"><b>⑦ Algorithme · §9</b>pas de formule close ⇒ gradient, momentum, SGD<i>l'outil de tous les chapitres suivants</i></a>
+</div>
+
+<h3 id="roadmap-why">Le raisonnement, maillon par maillon</h3>
+<ol class="plan">
+<li><span class="n">①</span><b>Fixer le critère.</b> On veut que $f(\bx)$ soit proche de $y$ en moyenne : minimiser l'erreur quadratique moyenne $\E[(y-f(\bx))^2]$. <span class="why">On montre que le meilleur $f$ possible est l'espérance conditionnelle $\E[y\mid\bx]$. Mais elle dépend de la loi $p(\bx,y)$, qu'on ne connaît pas. → Il faut chercher $f$ dans une famille raisonnable, à partir d'exemples.</span></li>
+<li><span class="n">②</span><b>Choisir la famille.</b> $f(\bx) = \bw\T\bphi(\bx)$ : on transforme d'abord l'entrée par des fonctions de base $\bphi$ (puissances de $x$, gaussiennes…), puis on combine linéairement. <span class="why">Le modèle peut être une courbe en $\bx$, tout en restant <b>linéaire en $\bw$</b> : c'est ce qui donnera une formule close.</span></li>
+<li><span class="n">③</span><b>Apprendre $\bw$.</b> On remplace la vraie MSE (inconnue) par sa moyenne sur les $N$ exemples, $\EMSE(\bw) = \frac1N\|\by-\bPhi\bw\|^2$, et on annule le gradient. <span class="why">On obtient les équations normales et $\bw_{\text{LS}}$. Géométriquement : $\bPhi\bw_{\text{LS}}$ est la projection orthogonale de $\by$ sur l'espace engendré par les colonnes de $\bPhi$. Si $\bPhi\T\bPhi$ n'est pas inversible, la pseudo-inverse choisit la solution de norme minimale.</span></li>
+<li><span class="n">④</span><b>Justifier la perte carrée.</b> <span class="why">Si $y = \bw\T\bphi(\bx) + \varepsilon$ avec un bruit gaussien, maximiser la vraisemblance des données revient exactement à minimiser la MSE empirique. Utiliser la perte carrée, c'est supposer un bruit gaussien.</span></li>
+<li><span class="n">⑤</span><b>Constater la limite.</b> <span class="why">Avec beaucoup de fonctions de base, la MSE d'entraînement tend vers 0 mais l'erreur sur de nouveaux points explose : le modèle apprend le bruit, avec des coefficients énormes. → Il faut contrôler la taille de $\bw$.</span></li>
+<li><span class="n">⑥</span><b>Régulariser.</b> Ajouter $\lambda\|\bw\|^2$ (ridge) : formule close toujours inversible. <span class="why">Vu de façon probabiliste, c'est un prior gaussien « $\bw$ est petit » (MAP). Avec $\lambda\|\bw\|_1$ (lasso), beaucoup de coefficients deviennent exactement nuls (sélection de variables) — mais il n'y a plus de formule close.</span></li>
+<li><span class="n">⑦</span><b>Optimiser sans formule.</b> <span class="why">La descente de gradient fait de petits pas dans la direction $-\nabla\hL$ ; le pas $\gamma$ est délicat, le momentum amortit les zigzags, et SGD remplace le gradient complet par celui d'un mini-batch (sans biais). C'est ce qu'on utilisera pour la régression logistique, les SVM, les réseaux…</span></li>
+</ol>
+
+<div class="box intu"><div class="box-title">À la fin du chapitre, tu dois savoir…</div>
+<ul>
+<li>prouver que $\E[y\mid\bx]$ minimise la MSE (décomposition) ;</li>
+<li>construire $\bPhi$, dériver les équations normales et $\bw_{\text{LS}}$, et expliquer le rôle de $\bPhi^\dagger\by$ ;</li>
+<li>montrer MLE = moindres carrés sous bruit gaussien, et MAP = ridge avec $\bSigma = \frac{\sigma^2}{N\lambda}\bI$ ;</li>
+<li>expliquer géométriquement pourquoi le lasso donne des solutions parcimonieuses ;</li>
+<li>écrire la mise à jour de GD pour la régression linéaire, et prouver que le gradient de mini-batch est sans biais.</li>
+</ul></div>
+<div class="box hw local-only"><div class="box-title">Où se trouve chaque question du HW1 dans ce chapitre</div>
+Q2.(1) → <a href="#setup">§1</a> · Q2.(2)(3) → <a href="#ls">§3</a> (et <a href="#pinv">pseudo-inverse</a>) · Q2.(4) → <a href="#overfit">§5</a> · Q3.(1) → <a href="#mle">§4</a> · Q3.(2) → <a href="#map">§7</a> · Q3.(3) → <a href="#ridge">§6</a> · Q4.(1)–(3) → <a href="#optim">§9</a> · Q4.(4) → <a href="#sgd">SGD</a>. Indices et corrigés : <a href="homework.html#hw1">page Devoirs</a>.
+</div>
+
+<h2 id="notations">Notations du chapitre</h2>
+<p>Toutes les lettres utilisées dans la page (et dans les slides), au même endroit.</p>
+<div class="notation-wrap"><table class="notation">
+<thead><tr><th>Symbole</th><th>Se lit / signifie</th><th>Nature</th><th>Où</th></tr></thead>
+<tbody>
+<tr class="grp"><td colspan="4">Données et loi</td></tr>
+<tr><td>$N$</td><td>nombre d'exemples d'entraînement</td><td>entier</td><td class="where">partout</td></tr>
+<tr><td>$\bx,\ \bx_n$</td><td>entrée (une observation), $n$-ième entrée. Souvent un scalaire $x$ dans les exemples (polynômes)</td><td>$\R^D$ (ou $\R$)</td><td class="where">partout</td></tr>
+<tr><td>$y,\ y_n$</td><td>sortie / cible réelle</td><td>réel</td><td class="where">partout</td></tr>
+<tr><td>$\by$</td><td>le vecteur $[y_1,\dots,y_N]\T$ de toutes les cibles</td><td>$\R^N$</td><td class="where">§3 →</td></tr>
+<tr><td>$\mathcal D$</td><td>le jeu de données $\{(\bx_n,y_n)\}_{n=1}^N$</td><td>ensemble</td><td class="where">§3, §4</td></tr>
+<tr><td>$p(\bx,y)$</td><td>la vraie loi jointe (inconnue) qui génère les couples</td><td>densité</td><td class="where">§1</td></tr>
+<tr><td>$\varepsilon,\ \sigma^2$</td><td>bruit (ce que $\bx$ n'explique pas) ; sa variance</td><td>v.a. ; réel $>0$</td><td class="where">§1, §4, §7</td></tr>
+<tr class="grp"><td colspan="4">Modèle</td></tr>
+<tr><td>$\phi_\ell,\ \bphi(\bx)$</td><td>$\ell$-ième fonction de base ; le vecteur de features $[\phi_1(\bx),\dots,\phi_L(\bx)]\T$</td><td>$\R^D\to\R$ ; $\R^L$</td><td class="where">§2 →</td></tr>
+<tr><td>$L$</td><td><b>nombre de fonctions de base</b> = nombre de paramètres</td><td>entier</td><td class="where">§2 →</td></tr>
+<tr><td>$M$</td><td>degré du polynôme dans le HW1 et PRML : $L = M+1$ paramètres</td><td>entier</td><td class="where">§5, HW1</td></tr>
+<tr><td>$\bw$ (ou $\btheta$)</td><td>vecteur de poids $[w_1,\dots,w_L]\T$</td><td>$\R^L$</td><td class="where">§2 →</td></tr>
+<tr><td>$f(\bx) = \bw\T\bphi(\bx)$</td><td>la prédiction du modèle</td><td>réel</td><td class="where">§2 →</td></tr>
+<tr><td>$\bPhi$</td><td><b>design matrix</b> : ligne $n$ = $\bphi(\bx_n)\T$, colonne $\ell$ = $\phi_\ell$ évaluée sur tous les points</td><td>$\R^{N\times L}$</td><td class="where">§3 →</td></tr>
+<tr><td>$\bphi_n$</td><td>raccourci pour $\bphi(\bx_n)$ (une ligne de $\bPhi$)</td><td>$\R^L$</td><td class="where">§9</td></tr>
+<tr class="grp"><td colspan="4">Critères et estimateurs</td></tr>
+<tr><td>$E(f)$</td><td>vraie MSE $\E[(y-f(\bx))^2]$ (espérance sur $p(\bx,y)$)</td><td>réel</td><td class="where">§1</td></tr>
+<tr><td>$\EMSE(\bw)$</td><td>MSE <b>empirique</b> $\frac1N\|\by-\bPhi\bw\|^2$ (le chapeau = calculé sur les données)</td><td>$\R^L\to\R_+$</td><td class="where">§3 →</td></tr>
+<tr><td>$\bw_{\text{LS}},\ \bPhi^\dagger$</td><td>estimateur des moindres carrés ; pseudo-inverse de Moore–Penrose</td><td>$\R^L$ ; $\R^{L\times N}$</td><td class="where">§3</td></tr>
+<tr><td>$\mathcal L(\bw;\mathcal D)$</td><td><b>vraisemblance</b> $p(\by\mid\bPhi,\bw)$ vue comme fonction de $\bw$</td><td>$\R^L\to\R_+$</td><td class="where">§4</td></tr>
+<tr><td>$\lambda$</td><td>force de la régularisation</td><td>réel $>0$</td><td class="where">§6 →</td></tr>
+<tr><td>$\|\bw\|^2,\ \|\bw\|_1$</td><td>$\sum_\ell w_\ell^2$ (ridge) ; $\sum_\ell|w_\ell|$ (lasso)</td><td>réels $\ge0$</td><td class="where">§6, §8</td></tr>
+<tr><td>$p(\bw),\ \bSigma$</td><td>prior sur les poids $\N(\mathbf 0,\bSigma)$ ; sa <b>matrice de covariance</b></td><td>densité ; $\R^{L\times L}$</td><td class="where">§7</td></tr>
+<tr><td>$\bw_{\text{MLE}},\ \bw_{\text{ridge}},\ \bw_{\text{MAP}}$</td><td>les estimateurs du chapitre ; MLE = LS, MAP = ridge</td><td>$\R^L$</td><td class="where">§4, §6, §7</td></tr>
+<tr class="grp"><td colspan="4">Optimisation (§9, notations des slides 31–46)</td></tr>
+<tr><td>$\ell(y,\hat y)$, $\ell_i$</td><td>perte d'un exemple ; perte de l'exemple $i$</td><td>réel $\ge0$</td><td class="where">§9</td></tr>
+<tr><td>$L(\btheta),\ \hL(\btheta)$</td><td>risque <b>attendu</b> (espérance) ; risque <b>empirique</b> (moyenne sur les données)</td><td>réels</td><td class="where">§9</td></tr>
+<tr><td>$\nabla\hL$</td><td>gradient : vecteur colonne des dérivées partielles</td><td>vecteur</td><td class="where">§9</td></tr>
+<tr><td>$\btheta_t,\ \gamma_t,\ \bg_t$</td><td>itéré n° $t$ ; pas (<em>learning rate</em>) ; gradient utilisé au pas $t$</td><td>vecteur, réel, vecteur</td><td class="where">§9</td></tr>
+<tr><td>$\alpha,\ \Delta\btheta_i$</td><td>coefficient de momentum ; dernier déplacement $\btheta_i-\btheta_{i-1}$</td><td>$[0,1]$ ; vecteur</td><td class="where">§9</td></tr>
+<tr><td>$\mathcal B_t,\ \hL_{\mathcal B}$</td><td>mini-batch (indices tirés) ; risque empirique sur ce mini-batch</td><td>ensemble ; réel</td><td class="where">§9 (SGD)</td></tr>
+</tbody></table></div>
+
+<div class="box warn"><div class="box-title">Pièges de notation (ils viennent des slides)</div>
+<ol>
+<li><b>$\bw$ et $\btheta$ désignent la même chose</b> : les slides écrivent $\btheta$ p.5, p.7 et dans toute la partie optimisation (p.31–46), $\bw$ ailleurs.</li>
+<li><b>Beaucoup de « L »</b> : $L$ = nombre de fonctions de base ; $L(\btheta)$ = risque attendu ; $\hL(\btheta)$ = risque empirique ; $\mathcal L(\bw;\mathcal D)$ = vraisemblance ; $\ell$ = perte d'un exemple. Et sur la slide 10, les étiquettes « $L = 0, 1, 3, 9$ » des figures désignent en fait le <b>degré</b> (comme $M$ dans PRML et le HW1).</li>
+<li><b>Trois dimensions</b> : $d$ (slide 7, entrées brutes, matrice $X\in\R^{N\times d}$), $D$ (dimension de $\bx$), $L$ (nombre de features, matrice $\bPhi\in\R^{N\times L}$). Et $\mathcal D$ est le jeu de données, pas une dimension.</li>
+<li><b>$\sigma$</b> : écart-type du bruit (§4) ; mais aussi la largeur des bases gaussiennes (slide 11). Au chapitre 2, $\sigma$ sera la sigmoïde.</li>
+<li><b>$E$ et $\E$</b> : $E(f)$ est la vraie MSE, $\EMSE$ sa version empirique, $\E[\cdot]$ l'opérateur d'espérance.</li>
+<li><b>$\bSigma$</b> (§7) est une matrice de covariance, pas une somme.</li>
+<li><b>Facteur $\frac1N$ et valeur de $\lambda$</b> : les slides minimisent $\frac1N\|\by-\bPhi\bw\|^2 + \lambda\|\bw\|^2$, d'où le $N\lambda\bI$ dans la formule du ridge ; PRML minimise $\frac12\sum_n(\cdot)^2 + \frac\lambda2\|\bw\|^2$, d'où $\lambda\bI$. Même famille de solutions, mais pas la même valeur de $\lambda$.</li>
+<li><b>Indices</b> : $n$ pour les exemples (p.12–17), $i$ dans la partie optimisation (p.31+), $t$ pour les itérations.</li>
+</ol></div>
 
 <div class="box intu"><div class="box-title">Mode d'emploi des scènes</div>
 <ul>
@@ -63,6 +150,7 @@
   <a class="src book" href="../Textbooks/Pattern%20Recognition%20and%20Machine%20Learning.pdf#page=66" target="_blank">PRML §1.5.5 p.46</a>
   <a class="src hw" href="../Homework/Homework_1.pdf" target="_blank">HW1 Q2.(1)</a>
 </div>
+<div class="box road"><div class="box-title">Où on en est</div><div class="road-row"><span class="rk ok">Acquis</span><div>Les probabilités du HW0 : espérance, espérance conditionnelle, variance.</div></div><div class="road-row"><span class="rk q">Il manque</span><div>Que veut dire « bien prédire » un nombre réel $y$ à partir de $\bx$ ? Que faut-il minimiser ?</div></div><div class="road-row"><span class="rk go">Cette partie</span><div>On fixe le critère (la MSE) et on trouve le meilleur prédicteur possible : $\E[y\mid\bx]$. Problème : il dépend de la loi $p(\bx,y)$, inconnue. Il faudra l'approcher avec des exemples et une famille de fonctions.</div></div></div>
 
 <div class="box def"><div class="box-title">Définition — Régression</div>
 La régression modélise la relation entre une entrée $x$ (<em>covariate</em>, variable indépendante) et une sortie réelle $y$ (<em>target</em>, <em>response</em>) :
@@ -121,6 +209,7 @@ Pourquoi le meilleur $f$ est-il $\E[y\mid x]$ ? → Parce que pour chaque $x$, l
   <a class="src book" href="../Textbooks/Pattern%20Recognition%20and%20Machine%20Learning.pdf#page=158" target="_blank">PRML §3.1 p.138–140</a>
   <a class="src book" href="../Textbooks/Deep%20Learning%20-%20Foundations%20and%20Concepts.pdf#page=131" target="_blank">DL §4.1.1 p.111</a>
 </div>
+<div class="box road"><div class="box-title">Où on en est</div><div class="road-row"><span class="rk ok">Acquis</span><div>La cible idéale $\E[y\mid\bx]$, mais elle est inconnue.</div></div><div class="road-row"><span class="rk q">Il manque</span><div>Une <b>famille de fonctions</b> où chercher : assez riche pour suivre des courbes, assez simple pour s'ajuster facilement.</div></div><div class="road-row"><span class="rk go">Cette partie</span><div>Les modèles linéaires à fonctions de base, $f(\bx) = \bw\T\bphi(\bx)$ : non linéaires en $\bx$, mais linéaires en $\bw$. C'est cette linéarité qui donnera une formule close au §3.</div></div></div>
 
 <p>Hypothèse de base : $y = \theta\T x$ avec $x\in\R^d$. Sur un jeu de données, en empilant les $x_n\T$ en lignes d'une matrice $X\in\R^{N\times d}$ : $\ \mathbf y = X\theta$.</p>
 <p>« Linéaire » paraît trop pauvre (slide 7 : <em>« Are linear models too simple? »</em>). Le tour de passe-passe : on applique d'abord une transformation fixe $\phi$ à l'entrée.</p>
@@ -158,6 +247,7 @@ Même idée plus tard : régression logistique avec features, puis le <strong>ke
   <a class="src book" href="../Textbooks/Pattern%20Recognition%20and%20Machine%20Learning.pdf#page=160" target="_blank">PRML §3.1.1 p.140–142</a>
   <a class="src hw" href="../Homework/Homework_1.pdf" target="_blank">HW1 Q2.(2)(3)</a>
 </div>
+<div class="box road"><div class="box-title">Où on en est</div><div class="road-row"><span class="rk ok">Acquis</span><div>Le modèle $f(\bx) = \bw\T\bphi(\bx)$, avec $L$ poids inconnus.</div></div><div class="road-row"><span class="rk q">Il manque</span><div>Une façon de choisir $\bw$ à partir des $N$ exemples (la vraie MSE est incalculable : $p(\bx,y)$ est inconnue).</div></div><div class="road-row"><span class="rk go">Cette partie</span><div>On minimise la MSE <b>empirique</b> : équations normales, formule $\bw_{\text{LS}}$, interprétation comme une projection, et ce qui se passe quand $\bPhi\T\bPhi$ n'est pas inversible (pseudo-inverse).</div></div></div>
 <div class="vids"><div class="vids-title">▶ Vidéos<span>en anglais · s'ouvrent sur YouTube</span></div><div class="vids-grid"><a class="vid" href="https://www.youtube.com/watch?v=PaFPbb66DxQ" target="_blank" rel="noopener"><span class="vid-thumb">▶<img src="https://i.ytimg.com/vi/PaFPbb66DxQ/mqdefault.jpg" loading="lazy" alt="" onerror="this.remove()"></span><span class="vid-body"><span class="vid-ch">StatQuest</span><span class="vid-t" style="display:block">The Main Ideas of Fitting a Line to Data (Least Squares and Linear Regression)</span><span class="vid-why" style="display:block">Les moindres carrés en images : résidus, somme des carrés, pente et ordonnée optimales.</span></span></a><a class="vid" href="https://www.youtube.com/watch?v=4b4MUYve_U8" target="_blank" rel="noopener"><span class="vid-thumb">▶<img src="https://i.ytimg.com/vi/4b4MUYve_U8/mqdefault.jpg" loading="lazy" alt="" onerror="this.remove()"></span><span class="vid-body"><span class="vid-ch">Stanford CS229 — Andrew Ng</span><span class="vid-t" style="display:block">Lecture 2: Linear Regression and Gradient Descent</span><span class="vid-why" style="display:block">Cours complet : fonction de coût, gradient, équations normales — même niveau que les slides.</span></span></a></div></div>
 
 
@@ -331,6 +421,7 @@ Si $\bPhi\T\bPhi$ est singulière ($\operatorname{rang}\bPhi<M+1$ : trop peu de 
   <a class="src book" href="../Textbooks/Pattern%20Recognition%20and%20Machine%20Learning.pdf#page=160" target="_blank">PRML §3.1.1 p.140–142</a>
   <a class="src hw" href="../Homework/Homework_1.pdf" target="_blank">HW1 Q3.(1)</a>
 </div>
+<div class="box road"><div class="box-title">Où on en est</div><div class="road-row"><span class="rk ok">Acquis</span><div>$\bw_{\text{LS}}$ minimise la MSE empirique, et on sait le calculer.</div></div><div class="road-row"><span class="rk q">Il manque</span><div>Pourquoi la perte <b>carrée</b> plutôt qu'une autre ? Quelle hypothèse cache-t-elle ?</div></div><div class="road-row"><span class="rk go">Cette partie</span><div>Avec un bruit gaussien, maximiser la vraisemblance des données redonne exactement $\bw_{\text{LS}}$. Choisir la perte carrée, c'est supposer un bruit gaussien.</div></div></div>
 <div class="vids"><div class="vids-title">▶ Vidéos<span>en anglais · s'ouvrent sur YouTube</span></div><div class="vids-grid"><a class="vid" href="https://www.youtube.com/watch?v=XepXtl9YKwc" target="_blank" rel="noopener"><span class="vid-thumb">▶<img src="https://i.ytimg.com/vi/XepXtl9YKwc/mqdefault.jpg" loading="lazy" alt="" onerror="this.remove()"></span><span class="vid-body"><span class="vid-ch">StatQuest</span><span class="vid-t" style="display:block">Maximum Likelihood, clearly explained!!!</span><span class="vid-why" style="display:block">L'idée de vraisemblance, sans formule, avec des cloches qu'on déplace.</span></span></a><a class="vid" href="https://www.youtube.com/watch?v=Dn6b9fCIUpM" target="_blank" rel="noopener"><span class="vid-thumb">▶<img src="https://i.ytimg.com/vi/Dn6b9fCIUpM/mqdefault.jpg" loading="lazy" alt="" onerror="this.remove()"></span><span class="vid-body"><span class="vid-ch">StatQuest</span><span class="vid-t" style="display:block">Maximum Likelihood For the Normal Distribution, step-by-step!!!</span><span class="vid-why" style="display:block">Le calcul complet du MLE gaussien, étape par étape (log, dérivée, annulation).</span></span></a></div></div>
 
 
@@ -377,6 +468,7 @@ Non. Le choix de la loss <em>encode</em> une hypothèse sur le bruit. Bruit de L
   <a class="src book" href="../Textbooks/Pattern%20Recognition%20and%20Machine%20Learning.pdf#page=24" target="_blank">PRML §1.1 p.4–11 (même exemple)</a>
   <a class="src hw" href="../Homework/Homework_1.pdf" target="_blank">HW1 Q2.(4)</a>
 </div>
+<div class="box road"><div class="box-title">Où on en est</div><div class="road-row"><span class="rk ok">Acquis</span><div>Une méthode complète : modèle, perte justifiée, formule close.</div></div><div class="road-row"><span class="rk q">Il manque</span><div>Plus de fonctions de base = MSE d'entraînement plus petite. Est-ce toujours mieux ?</div></div><div class="road-row"><span class="rk go">Cette partie</span><div>Non : avec trop de paramètres le modèle apprend le bruit (sur-apprentissage). On le mesure en comparant erreur d'entraînement et de test, et on le décompose en biais et variance.</div></div></div>
 <div class="vids"><div class="vids-title">▶ Vidéos<span>en anglais · s'ouvrent sur YouTube</span></div><div class="vids-grid"><a class="vid" href="https://www.youtube.com/watch?v=EuBBz3bI-aA" target="_blank" rel="noopener"><span class="vid-thumb">▶<img src="https://i.ytimg.com/vi/EuBBz3bI-aA/mqdefault.jpg" loading="lazy" alt="" onerror="this.remove()"></span><span class="vid-body"><span class="vid-ch">StatQuest</span><span class="vid-t" style="display:block">Machine Learning Fundamentals: Bias and Variance</span><span class="vid-why" style="display:block">Biais, variance, sur-apprentissage : train vs test avec une courbe « squiggly ».</span></span></a></div></div>
 
 <p>Données du HW1 : $x_n\sim\mathrm{Unif}[0,1]$, $y_n = \sin(2\pi x_n) + \varepsilon_n$, $\varepsilon_n\sim\N(0, 0.2^2)$, $N_{\text{train}} = 15$, $N_{\text{test}} = 400$, base polynomiale $\bphi_M(x) = [1, x, \dots, x^M]\T$. Un modèle avec beaucoup de paramètres peut <strong>mémoriser</strong> le bruit au lieu d'apprendre la tendance. On le détecte en comparant erreurs d'entraînement et de test.</p>
@@ -409,6 +501,7 @@ $$\E_{\mathcal D}\big[(f_{\mathcal D}(x) - h(x))^2\big] = \underbrace{\big(\E_{\
   <a class="src book" href="../Textbooks/Deep%20Learning%20-%20Foundations%20and%20Concepts.pdf#page=277" target="_blank">DL §9.2 weight decay</a>
   <a class="src hw" href="../Homework/Homework_1.pdf" target="_blank">HW1 Q3.(3)</a>
 </div>
+<div class="box road"><div class="box-title">Où on en est</div><div class="road-row"><span class="rk ok">Acquis</span><div>Le sur-apprentissage s'accompagne de coefficients $w_\ell$ énormes qui se compensent.</div></div><div class="road-row"><span class="rk q">Il manque</span><div>Un moyen de garder un modèle riche sans qu'il colle au bruit.</div></div><div class="road-row"><span class="rk go">Cette partie</span><div>Pénaliser $\|\bw\|^2$ : la régression ridge. Nouvelle formule close, toujours inversible, et un $\lambda$ qui règle le compromis entre ajustement et simplicité.</div></div></div>
 <div class="vids"><div class="vids-title">▶ Vidéos<span>en anglais · s'ouvrent sur YouTube</span></div><div class="vids-grid"><a class="vid" href="https://www.youtube.com/watch?v=Q81RR3yKn30" target="_blank" rel="noopener"><span class="vid-thumb">▶<img src="https://i.ytimg.com/vi/Q81RR3yKn30/mqdefault.jpg" loading="lazy" alt="" onerror="this.remove()"></span><span class="vid-body"><span class="vid-ch">StatQuest</span><span class="vid-t" style="display:block">Regularization Part 1: Ridge (L2) Regression</span><span class="vid-why" style="display:block">Pourquoi pénaliser $\|\bw\|^2$ réduit la variance ; choix de $\lambda$.</span></span></a></div></div>
 
 <p>Pour limiter le sur-apprentissage : restreindre l'espace des paramètres en préférant les petits $\|\bw\|$ (slide 21).</p>
@@ -453,6 +546,7 @@ $$\bw_{\text{ridge}} = \big(N\lambda\bI + \bPhi\T\bPhi\big)^{-1}\bPhi\T\by\quad\
   <a class="src book" href="../Textbooks/Pattern%20Recognition%20and%20Machine%20Learning.pdf#page=172" target="_blank">PRML §3.3.1 p.152–156 (Fig. 3.7)</a>
   <a class="src hw" href="../Homework/Homework_1.pdf" target="_blank">HW1 Q3.(2)</a>
 </div>
+<div class="box road"><div class="box-title">Où on en est</div><div class="road-row"><span class="rk ok">Acquis</span><div>Ridge = MSE empirique + $\lambda\|\bw\|^2$, mais le terme ajouté a été posé « à la main ».</div></div><div class="road-row"><span class="rk q">Il manque</span><div>D'où vient ce terme ? (Le §4 a justifié la MSE ; on fait pareil pour la pénalité.)</div></div><div class="road-row"><span class="rk go">Cette partie</span><div>Même modèle de bruit gaussien + une croyance a priori « $\bw$ est petit » (prior gaussien) ⇒ l'estimateur MAP est exactement le ridge.</div></div></div>
 <div class="vids"><div class="vids-title">▶ Vidéos<span>en anglais · s'ouvrent sur YouTube</span></div><div class="vids-grid"><a class="vid" href="https://www.youtube.com/watch?v=845xlSrrB38" target="_blank" rel="noopener"><span class="vid-thumb">▶<img src="https://i.ytimg.com/vi/845xlSrrB38/mqdefault.jpg" loading="lazy" alt="" onerror="this.remove()"></span><span class="vid-body"><span class="vid-ch">Rich Radke (RPI)</span><span class="vid-t" style="display:block">PB65: Maximum A Posteriori (MAP) Estimation</span><span class="vid-why" style="display:block">Prior × vraisemblance → posterior, et le mode du posterior (MAP).</span></span></a></div></div>
 
 <p>Même modèle d'observation gaussien $p(\by\mid\bPhi,\bw) = \N(\by\mid\bPhi\bw,\sigma^2\bI)$, plus une croyance <em>a priori</em> : les bons paramètres sont petits, $p(\bw) = \N(\bw\mid 0,\bSigma)$.</p>
@@ -489,6 +583,7 @@ Par Bayes, $p(\bw\mid\by,\bPhi) = p(\by\mid\bPhi,\bw)p(\bw)/p(\by\mid\bPhi)$ et 
   <a class="src slides" href="../Slides/2-linear-regression.pdf#page=28" target="_blank">Slides p.28–29</a>
   <a class="src book" href="../Textbooks/Pattern%20Recognition%20and%20Machine%20Learning.pdf#page=164" target="_blank">PRML §3.1.4 p.144–146 (Fig. 3.3, 3.4)</a>
 </div>
+<div class="box road"><div class="box-title">Où on en est</div><div class="road-row"><span class="rk ok">Acquis</span><div>Le ridge rétrécit tous les coefficients, mais aucun ne devient exactement nul.</div></div><div class="road-row"><span class="rk q">Il manque</span><div>Et si on veut <b>sélectionner</b> les variables utiles (beaucoup de $w_\ell = 0$) ?</div></div><div class="road-row"><span class="rk go">Cette partie</span><div>La pénalité $\ell_1$ (lasso) donne des solutions parcimonieuses, et on voit pourquoi géométriquement. Prix à payer : plus de formule close (non dérivable en 0), ce qui motive la partie suivante.</div></div></div>
 <div class="vids"><div class="vids-title">▶ Vidéos<span>en anglais · s'ouvrent sur YouTube</span></div><div class="vids-grid"><a class="vid" href="https://www.youtube.com/watch?v=NGf0voTMlcs" target="_blank" rel="noopener"><span class="vid-thumb">▶<img src="https://i.ytimg.com/vi/NGf0voTMlcs/mqdefault.jpg" loading="lazy" alt="" onerror="this.remove()"></span><span class="vid-body"><span class="vid-ch">StatQuest</span><span class="vid-t" style="display:block">Regularization Part 2: Lasso (L1) Regression</span><span class="vid-why" style="display:block">Le lasso et sa différence clé avec le ridge : des coefficients exactement nuls.</span></span></a><a class="vid" href="https://www.youtube.com/watch?v=Xm2C_gTAl8c" target="_blank" rel="noopener"><span class="vid-thumb">▶<img src="https://i.ytimg.com/vi/Xm2C_gTAl8c/mqdefault.jpg" loading="lazy" alt="" onerror="this.remove()"></span><span class="vid-body"><span class="vid-ch">StatQuest</span><span class="vid-t" style="display:block">Ridge vs Lasso Regression, Visualized!!!</span><span class="vid-why" style="display:block">Pourquoi le lasso met des poids à 0 et pas le ridge, en visualisant la pénalité.</span></span></a></div></div>
 
 <div class="box def"><div class="box-title">Lasso regression</div>
@@ -530,6 +625,7 @@ Pas de forme close ; l'objectif n'est <strong>pas différentiable</strong> en $w
   <a class="src slides" href="../Slides/2-linear-regression.pdf#page=31" target="_blank">Slides p.31–36</a>
   <a class="src book" href="../Textbooks/Deep%20Learning%20-%20Foundations%20and%20Concepts.pdf#page=227" target="_blank">DL §7.1–7.2 p.207–213</a>
 </div>
+<div class="box road"><div class="box-title">Où on en est</div><div class="road-row"><span class="rk ok">Acquis</span><div>Moindres carrés et ridge ont une formule close ; le lasso non, et la plupart des modèles (logistique, SVM, réseaux) non plus.</div></div><div class="road-row"><span class="rk q">Il manque</span><div>Une méthode <b>générale</b> pour minimiser une perte sans résoudre $\nabla = 0$ à la main.</div></div><div class="road-row"><span class="rk go">Cette partie</span><div>La descente de gradient : direction, choix du pas, momentum contre les zigzags, et SGD quand $N$ est grand. C'est l'outil de tous les chapitres suivants.</div></div></div>
 <div class="vids"><div class="vids-title">▶ Vidéos<span>en anglais · s'ouvrent sur YouTube</span></div><div class="vids-grid"><a class="vid" href="https://www.youtube.com/watch?v=sDv4f4s2SB8" target="_blank" rel="noopener"><span class="vid-thumb">▶<img src="https://i.ytimg.com/vi/sDv4f4s2SB8/mqdefault.jpg" loading="lazy" alt="" onerror="this.remove()"></span><span class="vid-body"><span class="vid-ch">StatQuest</span><span class="vid-t" style="display:block">Gradient Descent, Step-by-Step</span><span class="vid-why" style="display:block">La descente de gradient pas à pas sur une régression : dérivées, pas, arrêt.</span></span></a><a class="vid" href="https://www.youtube.com/watch?v=IHZwWFHWa-w" target="_blank" rel="noopener"><span class="vid-thumb">▶<img src="https://i.ytimg.com/vi/IHZwWFHWa-w/mqdefault.jpg" loading="lazy" alt="" onerror="this.remove()"></span><span class="vid-body"><span class="vid-ch">3Blue1Brown</span><span class="vid-t" style="display:block">Gradient descent, how neural networks learn</span><span class="vid-why" style="display:block">Le gradient comme direction de descente dans un paysage de coût (animations 3Blue1Brown).</span></span></a></div></div>
 
 <div class="box def"><div class="box-title">Learning as optimization</div>
@@ -653,6 +749,10 @@ Si $\mathcal B$ est tiré uniformément parmi les sous-ensembles de taille $B$ d
 
 <!-- ===================================================================== -->
 <h2 id="summary"><span class="num">10</span>Résumé &amp; questions de la slide 47</h2>
+<div class="box thm"><div class="box-title">Tout le chapitre en une chaîne</div>
+$$\underbrace{\min_f\E[(y-f(\bx))^2]}_{\text{§1 : }f^* = \E[y\mid\bx]}\ \xrightarrow{\text{modèle}}\ \underbrace{f(\bx) = \bw\T\bphi(\bx)}_{\text{§2}}\ \xrightarrow{\text{données}}\ \underbrace{\bw_{\text{LS}} = (\bPhi\T\bPhi)^{-1}\bPhi\T\by}_{\text{§3 : moindres carrés} = \text{§4 : MLE}}$$
+$$\xrightarrow{\text{sur-apprentissage (§5)}}\ \underbrace{\bw_{\text{ridge}} = (N\lambda\bI+\bPhi\T\bPhi)^{-1}\bPhi\T\by}_{\text{§6 : ridge} = \text{§7 : MAP}},\quad\underbrace{\lambda\|\bw\|_1}_{\text{§8 : lasso}}\ \xrightarrow{\text{pas de formule close}}\ \underbrace{\btheta_{t+1} = \btheta_t-\gamma_t\nabla\hL(\btheta_t)}_{\text{§9 : GD, momentum, SGD}}$$
+</div>
 <div class="box q"><div class="box-title">Quel est le rôle des fonctions de base ?</div>
 <details class="proof"><summary>Réponse</summary><div class="proof-body"><p>Elles transforment l'entrée pour qu'un modèle <b>linéaire en $\bw$</b> capture des relations <b>non linéaires en $x$</b>. On garde la convexité et la forme close ; la difficulté est déplacée dans le choix (manuel) des features. Géométriquement : on relève les données dans un espace de features où une fonction linéaire (un hyperplan) suffit.</p></div></details></div>
 <div class="box q"><div class="box-title">Quel est le rôle de la régularisation ?</div>
