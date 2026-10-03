@@ -433,3 +433,24 @@ ol.plan > li > .n { color: var(--yellow-s); font-weight: 700; margin-right: 6px;
 ol.plan .why { color: var(--text-faint); font-size: 14px; }
 a.offline-ref { cursor: default; }
 a.offline-ref:hover { filter: none; text-decoration: none; }
+
+/* ---------- fil conducteur : « où on en est » + tableau des notations ---------- */
+.box.road { border-left: 3px solid var(--teal); background: rgba(92, 208, 179, 0.04); }
+.box.road > .box-title { color: var(--teal); }
+.road-row { display: flex; gap: 12px; align-items: baseline; margin: 5px 0; }
+.road-row .rk { flex: 0 0 82px; font-size: 10.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; text-align: center; padding: 1px 6px; border-radius: 4px; }
+.road-row .rk.ok { color: var(--green); border: 1px solid var(--green); }
+.road-row .rk.q { color: var(--red); border: 1px solid var(--red); }
+.road-row .rk.go { color: var(--yellow-s); border: 1px solid var(--yellow-s); }
+.road-row > div { flex: 1; }
+.flow a.st { text-decoration: none; transition: border-color .15s; }
+.flow a.st:hover { border-color: var(--yellow-s); }
+.flow .st i { display: block; font-style: normal; color: var(--text-faint); font-size: 11.5px; margin-top: 4px; }
+.notation-wrap { overflow-x: auto; margin: 10px 0 18px; }
+table.notation { border-collapse: collapse; width: 100%; font-size: 14px; }
+table.notation th { color: var(--text-faint); font-weight: 600; font-size: 12px; text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--line-2); }
+table.notation td { padding: 7px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+table.notation td:first-child { color: var(--yellow-s); white-space: nowrap; text-align: center; }
+table.notation td.where { color: var(--text-faint); font-size: 12.5px; white-space: nowrap; }
+table.notation tr.grp td { color: var(--teal); font-size: 11.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; text-align: left; padding-top: 14px; border-bottom: 1px solid var(--line-2); }
+@media (max-width: 700px) { .road-row { flex-direction: column; gap: 2px; } .road-row .rk { flex: none; } table.notation td.where { white-space: normal; } }
