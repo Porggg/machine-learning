@@ -473,3 +473,10 @@ table.notation tr.grp td { color: var(--teal); font-size: 11.5px; font-weight: 7
 .hw-stmt[data-lang="both"] .lang-fr::before { content: "Reformulation (FR)"; color: var(--text-faint); }
 .hw-stmt[data-lang="both"] .lang-en { margin-top: 10px; }
 .hw-stmt .lang-fr > p:first-child, .hw-stmt .lang-en > p:first-child { margin-top: 0; }
+/* corrigés bilingues : sélecteur au-dessus du bloc dépliable */
+.hw-stmt.sol-bi > .lang-switch { float: none; width: max-content; margin: 10px 0 4px auto; }
+.hw-stmt.sol-bi .lang-en { border-left: 0; padding-left: 0; }
+.hw-stmt.sol-bi .lang-en::before { content: "English"; }
+.hw-stmt.sol-bi[data-lang="both"] .lang-fr::before { content: "Français"; }
+.hw-stmt.sol-bi[data-lang="fr"] .lang-fr::before, .hw-stmt.sol-bi[data-lang="en"] .lang-en::before { display: none; }
+.hw-stmt.sol-bi details.proof { margin-top: 4px; }
