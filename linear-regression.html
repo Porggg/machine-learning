@@ -43,7 +43,7 @@
   <a class="src book" href="../Textbooks/Pattern%20Recognition%20and%20Machine%20Learning.pdf#page=158" target="_blank">PRML ch. 3.1–3.3</a>
   <a class="src book" href="../Textbooks/Deep%20Learning%20-%20Foundations%20and%20Concepts.pdf#page=131" target="_blank">DL ch. 4.1</a>
   <a class="src book" href="../Textbooks/Deep%20Learning%20-%20Foundations%20and%20Concepts.pdf#page=226" target="_blank">DL ch. 7 (gradient descent)</a>
-  <a class="src hw" href="../Homework/Homework_1.pdf" target="_blank">HW1 (dû le 29/09)</a>
+  <a class="src hw" href="../Homework/HW1.pdf" target="_blank">HW1 (dû le 29/09)</a>
 </div>
 
 <p>Ce chapitre répond à <strong>une seule question</strong> : <em>comment prédire un nombre réel $y$ à partir d'une entrée $\bx$, en apprenant à partir d'exemples ?</em> Il construit la réponse complète — le critère, le modèle, la formule, sa justification, ses limites et leurs remèdes — puis l'outil d'optimisation qui servira dans tous les chapitres suivants. Chaque section répond au problème laissé ouvert par la précédente ; au début de chacune, un encadré <span class="c-teal"><b>Où on en est</b></span> fait le point.</p>
@@ -148,7 +148,7 @@ Q2.(1) → <a href="#setup">§1</a> · Q2.(2)(3) → <a href="#ls">§3</a> (et <
 <div class="sources">
   <a class="src slides" href="../Slides/2-linear-regression.pdf#page=3" target="_blank">Slides p.3–5</a>
   <a class="src book" href="../Textbooks/Pattern%20Recognition%20and%20Machine%20Learning.pdf#page=66" target="_blank">PRML §1.5.5 p.46</a>
-  <a class="src hw" href="../Homework/Homework_1.pdf" target="_blank">HW1 Q2.(1)</a>
+  <a class="src hw" href="../Homework/HW1.pdf" target="_blank">HW1 Q2.(1)</a>
 </div>
 <div class="box road"><div class="box-title">Où on en est</div><div class="road-row"><span class="rk ok">Acquis</span><div>Les probabilités du HW0 : espérance, espérance conditionnelle, variance.</div></div><div class="road-row"><span class="rk q">Il manque</span><div>Que veut dire « bien prédire » un nombre réel $y$ à partir de $\bx$ ? Que faut-il minimiser ?</div></div><div class="road-row"><span class="rk go">Cette partie</span><div>On fixe le critère (la MSE) et on trouve le meilleur prédicteur possible : $\E[y\mid\bx]$. Problème : il dépend de la loi $p(\bx,y)$, inconnue. Il faudra l'approcher avec des exemples et une famille de fonctions.</div></div></div>
 
@@ -245,7 +245,7 @@ Même idée plus tard : régression logistique avec features, puis le <strong>ke
 <div class="sources">
   <a class="src slides" href="../Slides/2-linear-regression.pdf#page=12" target="_blank">Slides p.12–14</a>
   <a class="src book" href="../Textbooks/Pattern%20Recognition%20and%20Machine%20Learning.pdf#page=160" target="_blank">PRML §3.1.1 p.140–142</a>
-  <a class="src hw" href="../Homework/Homework_1.pdf" target="_blank">HW1 Q2.(2)(3)</a>
+  <a class="src hw" href="../Homework/HW1.pdf" target="_blank">HW1 Q2.(2)(3)</a>
 </div>
 <div class="box road"><div class="box-title">Où on en est</div><div class="road-row"><span class="rk ok">Acquis</span><div>Le modèle $f(\bx) = \bw\T\bphi(\bx)$, avec $L$ poids inconnus.</div></div><div class="road-row"><span class="rk q">Il manque</span><div>Une façon de choisir $\bw$ à partir des $N$ exemples (la vraie MSE est incalculable : $p(\bx,y)$ est inconnue).</div></div><div class="road-row"><span class="rk go">Cette partie</span><div>On minimise la MSE <b>empirique</b> : équations normales, formule $\bw_{\text{LS}}$, interprétation comme une projection, et ce qui se passe quand $\bPhi\T\bPhi$ n'est pas inversible (pseudo-inverse).</div></div></div>
 <div class="vids"><div class="vids-title">▶ Vidéos<span>en anglais · s'ouvrent sur YouTube</span></div><div class="vids-grid"><a class="vid" href="https://www.youtube.com/watch?v=PaFPbb66DxQ" target="_blank" rel="noopener"><span class="vid-thumb">▶<img src="https://i.ytimg.com/vi/PaFPbb66DxQ/mqdefault.jpg" loading="lazy" alt="" onerror="this.remove()"></span><span class="vid-body"><span class="vid-ch">StatQuest</span><span class="vid-t" style="display:block">The Main Ideas of Fitting a Line to Data (Least Squares and Linear Regression)</span><span class="vid-why" style="display:block">Les moindres carrés en images : résidus, somme des carrés, pente et ordonnée optimales.</span></span></a><a class="vid" href="https://www.youtube.com/watch?v=4b4MUYve_U8" target="_blank" rel="noopener"><span class="vid-thumb">▶<img src="https://i.ytimg.com/vi/4b4MUYve_U8/mqdefault.jpg" loading="lazy" alt="" onerror="this.remove()"></span><span class="vid-body"><span class="vid-ch">Stanford CS229 — Andrew Ng</span><span class="vid-t" style="display:block">Lecture 2: Linear Regression and Gradient Descent</span><span class="vid-why" style="display:block">Cours complet : fonction de coût, gradient, équations normales — même niveau que les slides.</span></span></a></div></div>
@@ -419,7 +419,7 @@ Si $\bPhi\T\bPhi$ est singulière ($\operatorname{rang}\bPhi<M+1$ : trop peu de 
 <div class="sources">
   <a class="src slides" href="../Slides/2-linear-regression.pdf#page=15" target="_blank">Slides p.15–18</a>
   <a class="src book" href="../Textbooks/Pattern%20Recognition%20and%20Machine%20Learning.pdf#page=160" target="_blank">PRML §3.1.1 p.140–142</a>
-  <a class="src hw" href="../Homework/Homework_1.pdf" target="_blank">HW1 Q3.(1)</a>
+  <a class="src hw" href="../Homework/HW1.pdf" target="_blank">HW1 Q3.(1)</a>
 </div>
 <div class="box road"><div class="box-title">Où on en est</div><div class="road-row"><span class="rk ok">Acquis</span><div>$\bw_{\text{LS}}$ minimise la MSE empirique, et on sait le calculer.</div></div><div class="road-row"><span class="rk q">Il manque</span><div>Pourquoi la perte <b>carrée</b> plutôt qu'une autre ? Quelle hypothèse cache-t-elle ?</div></div><div class="road-row"><span class="rk go">Cette partie</span><div>Avec un bruit gaussien, maximiser la vraisemblance des données redonne exactement $\bw_{\text{LS}}$. Choisir la perte carrée, c'est supposer un bruit gaussien.</div></div></div>
 <div class="vids"><div class="vids-title">▶ Vidéos<span>en anglais · s'ouvrent sur YouTube</span></div><div class="vids-grid"><a class="vid" href="https://www.youtube.com/watch?v=XepXtl9YKwc" target="_blank" rel="noopener"><span class="vid-thumb">▶<img src="https://i.ytimg.com/vi/XepXtl9YKwc/mqdefault.jpg" loading="lazy" alt="" onerror="this.remove()"></span><span class="vid-body"><span class="vid-ch">StatQuest</span><span class="vid-t" style="display:block">Maximum Likelihood, clearly explained!!!</span><span class="vid-why" style="display:block">L'idée de vraisemblance, sans formule, avec des cloches qu'on déplace.</span></span></a><a class="vid" href="https://www.youtube.com/watch?v=Dn6b9fCIUpM" target="_blank" rel="noopener"><span class="vid-thumb">▶<img src="https://i.ytimg.com/vi/Dn6b9fCIUpM/mqdefault.jpg" loading="lazy" alt="" onerror="this.remove()"></span><span class="vid-body"><span class="vid-ch">StatQuest</span><span class="vid-t" style="display:block">Maximum Likelihood For the Normal Distribution, step-by-step!!!</span><span class="vid-why" style="display:block">Le calcul complet du MLE gaussien, étape par étape (log, dérivée, annulation).</span></span></a></div></div>
@@ -466,7 +466,7 @@ Non. Le choix de la loss <em>encode</em> une hypothèse sur le bruit. Bruit de L
 <div class="sources">
   <a class="src slides" href="../Slides/2-linear-regression.pdf#page=20" target="_blank">Slides p.10, 20–21</a>
   <a class="src book" href="../Textbooks/Pattern%20Recognition%20and%20Machine%20Learning.pdf#page=24" target="_blank">PRML §1.1 p.4–11 (même exemple)</a>
-  <a class="src hw" href="../Homework/Homework_1.pdf" target="_blank">HW1 Q2.(4)</a>
+  <a class="src hw" href="../Homework/HW1.pdf" target="_blank">HW1 Q2.(4)</a>
 </div>
 <div class="box road"><div class="box-title">Où on en est</div><div class="road-row"><span class="rk ok">Acquis</span><div>Une méthode complète : modèle, perte justifiée, formule close.</div></div><div class="road-row"><span class="rk q">Il manque</span><div>Plus de fonctions de base = MSE d'entraînement plus petite. Est-ce toujours mieux ?</div></div><div class="road-row"><span class="rk go">Cette partie</span><div>Non : avec trop de paramètres le modèle apprend le bruit (sur-apprentissage). On le mesure en comparant erreur d'entraînement et de test, et on le décompose en biais et variance.</div></div></div>
 <div class="vids"><div class="vids-title">▶ Vidéos<span>en anglais · s'ouvrent sur YouTube</span></div><div class="vids-grid"><a class="vid" href="https://www.youtube.com/watch?v=EuBBz3bI-aA" target="_blank" rel="noopener"><span class="vid-thumb">▶<img src="https://i.ytimg.com/vi/EuBBz3bI-aA/mqdefault.jpg" loading="lazy" alt="" onerror="this.remove()"></span><span class="vid-body"><span class="vid-ch">StatQuest</span><span class="vid-t" style="display:block">Machine Learning Fundamentals: Bias and Variance</span><span class="vid-why" style="display:block">Biais, variance, sur-apprentissage : train vs test avec une courbe « squiggly ».</span></span></a></div></div>
@@ -499,7 +499,7 @@ $$\E_{\mathcal D}\big[(f_{\mathcal D}(x) - h(x))^2\big] = \underbrace{\big(\E_{\
   <a class="src slides" href="../Slides/2-linear-regression.pdf#page=21" target="_blank">Slides p.21–22</a>
   <a class="src book" href="../Textbooks/Pattern%20Recognition%20and%20Machine%20Learning.pdf#page=164" target="_blank">PRML §3.1.4 p.144</a>
   <a class="src book" href="../Textbooks/Deep%20Learning%20-%20Foundations%20and%20Concepts.pdf#page=277" target="_blank">DL §9.2 weight decay</a>
-  <a class="src hw" href="../Homework/Homework_1.pdf" target="_blank">HW1 Q3.(3)</a>
+  <a class="src hw" href="../Homework/HW1.pdf" target="_blank">HW1 Q3.(3)</a>
 </div>
 <div class="box road"><div class="box-title">Où on en est</div><div class="road-row"><span class="rk ok">Acquis</span><div>Le sur-apprentissage s'accompagne de coefficients $w_\ell$ énormes qui se compensent.</div></div><div class="road-row"><span class="rk q">Il manque</span><div>Un moyen de garder un modèle riche sans qu'il colle au bruit.</div></div><div class="road-row"><span class="rk go">Cette partie</span><div>Pénaliser $\|\bw\|^2$ : la régression ridge. Nouvelle formule close, toujours inversible, et un $\lambda$ qui règle le compromis entre ajustement et simplicité.</div></div></div>
 <div class="vids"><div class="vids-title">▶ Vidéos<span>en anglais · s'ouvrent sur YouTube</span></div><div class="vids-grid"><a class="vid" href="https://www.youtube.com/watch?v=Q81RR3yKn30" target="_blank" rel="noopener"><span class="vid-thumb">▶<img src="https://i.ytimg.com/vi/Q81RR3yKn30/mqdefault.jpg" loading="lazy" alt="" onerror="this.remove()"></span><span class="vid-body"><span class="vid-ch">StatQuest</span><span class="vid-t" style="display:block">Regularization Part 1: Ridge (L2) Regression</span><span class="vid-why" style="display:block">Pourquoi pénaliser $\|\bw\|^2$ réduit la variance ; choix de $\lambda$.</span></span></a></div></div>
@@ -544,7 +544,7 @@ $$\bw_{\text{ridge}} = \big(N\lambda\bI + \bPhi\T\bPhi\big)^{-1}\bPhi\T\by\quad\
 <div class="sources">
   <a class="src slides" href="../Slides/2-linear-regression.pdf#page=23" target="_blank">Slides p.23–26</a>
   <a class="src book" href="../Textbooks/Pattern%20Recognition%20and%20Machine%20Learning.pdf#page=172" target="_blank">PRML §3.3.1 p.152–156 (Fig. 3.7)</a>
-  <a class="src hw" href="../Homework/Homework_1.pdf" target="_blank">HW1 Q3.(2)</a>
+  <a class="src hw" href="../Homework/HW1.pdf" target="_blank">HW1 Q3.(2)</a>
 </div>
 <div class="box road"><div class="box-title">Où on en est</div><div class="road-row"><span class="rk ok">Acquis</span><div>Ridge = MSE empirique + $\lambda\|\bw\|^2$, mais le terme ajouté a été posé « à la main ».</div></div><div class="road-row"><span class="rk q">Il manque</span><div>D'où vient ce terme ? (Le §4 a justifié la MSE ; on fait pareil pour la pénalité.)</div></div><div class="road-row"><span class="rk go">Cette partie</span><div>Même modèle de bruit gaussien + une croyance a priori « $\bw$ est petit » (prior gaussien) ⇒ l'estimateur MAP est exactement le ridge.</div></div></div>
 <div class="vids"><div class="vids-title">▶ Vidéos<span>en anglais · s'ouvrent sur YouTube</span></div><div class="vids-grid"><a class="vid" href="https://www.youtube.com/watch?v=845xlSrrB38" target="_blank" rel="noopener"><span class="vid-thumb">▶<img src="https://i.ytimg.com/vi/845xlSrrB38/mqdefault.jpg" loading="lazy" alt="" onerror="this.remove()"></span><span class="vid-body"><span class="vid-ch">Rich Radke (RPI)</span><span class="vid-t" style="display:block">PB65: Maximum A Posteriori (MAP) Estimation</span><span class="vid-why" style="display:block">Prior × vraisemblance → posterior, et le mode du posterior (MAP).</span></span></a></div></div>
@@ -712,7 +712,7 @@ $$\text{GD :}\quad \btheta_{t+1} = \btheta_t - \gamma_t\nabla\hL(\btheta_t)\qqua
   <a class="src slides" href="../Slides/2-linear-regression.pdf#page=37" target="_blank">Slides p.37, 43–46</a>
   <a class="src book" href="../Textbooks/Pattern%20Recognition%20and%20Machine%20Learning.pdf#page=163" target="_blank">PRML §3.1.3 (LMS) p.143</a>
   <a class="src book" href="../Textbooks/Deep%20Learning%20-%20Foundations%20and%20Concepts.pdf#page=231" target="_blank">DL §7.2.3–7.2.4</a>
-  <a class="src hw" href="../Homework/Homework_1.pdf" target="_blank">HW1 Q4</a>
+  <a class="src hw" href="../Homework/HW1.pdf" target="_blank">HW1 Q4</a>
 </div>
 <div class="vids"><div class="vids-title">▶ Vidéos<span>en anglais · s'ouvrent sur YouTube</span></div><div class="vids-grid"><a class="vid" href="https://www.youtube.com/watch?v=vMh0zPT0tLI" target="_blank" rel="noopener"><span class="vid-thumb">▶<img src="https://i.ytimg.com/vi/vMh0zPT0tLI/mqdefault.jpg" loading="lazy" alt="" onerror="this.remove()"></span><span class="vid-body"><span class="vid-ch">StatQuest</span><span class="vid-t" style="display:block">Stochastic Gradient Descent, Clearly Explained!!!</span><span class="vid-why" style="display:block">SGD et mini-batchs : même descente, un gradient estimé sur quelques points.</span></span></a></div></div>
 
