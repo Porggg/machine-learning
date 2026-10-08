@@ -4,3 +4,6 @@ homework/
 js/homework/
 # macOS
 .DS_Store
+
+# Lanceur local du serveur (outil personnel)
+cours-interactif.command
