@@ -26,20 +26,23 @@
 <div class="ex-page">
   <h1>Entraînement<span class="sub">Textes à trous dans le format de l'examen : définitions, démonstrations, devoirs</span></h1>
   <div class="ex-intro">
-    <p>Chaque exercice contient des trous <span class="blank-lbl">(a)</span>, <span class="blank-lbl">(b)</span>… à remplir dans les champs dessous. Tu peux taper les formules en LaTeX (<code>\lambda</code>, <code>\frac{2}{N}</code>, <code>\Phi^\top</code>) ou en texte simple (<code>2/N</code>, <code>Phi^T</code>, <code>λ</code>, <code>(X^TX)^-1</code>) : un aperçu s'affiche à droite. La vérification automatique est tolérante (espaces, gras, notations de transposée, lettres grecques) mais pas infaillible : en cas de doute, compare avec la <b>correction</b>, qui donne toujours la réponse et l'explication. Les calculs <b>🎲</b> tirent de nouvelles valeurs à chaque fois. Rien n'est sauvegardé.</p>
-    <p><b>Format de l'examen</b> : des textes à trous sur les <span class="c-blue">définitions</span>, sur les <span class="c-gold">démonstrations</span> du cours et sur les <span class="c-purple">devoirs</span>. Les exercices sont rangés selon ces trois types (plus quelques <span class="c-green">calculs</span>).<span class="local-only"> Les questions de devoir (HW1–HW4) se font sans avoir le sujet sous les yeux : tout le cadre et les données utiles sont dans l'énoncé. Elles ne sont visibles qu'en local, comme les corrigés.</span></p>
+    <p>Chaque exercice contient des trous <span class="blank-lbl">(a)</span>, <span class="blank-lbl">(b)</span>… à remplir dans les champs dessous. Tu peux taper les formules en LaTeX (<code>\lambda</code>, <code>\frac{2}{N}</code>, <code>\Phi^\top</code>) ou en texte simple (<code>2/N</code>, <code>Phi^T</code>, <code>λ</code>, <code>(X^TX)^-1</code>) : un aperçu s'affiche à droite. La vérification automatique est tolérante (espaces, gras, notations de transposée, lettres grecques) mais pas infaillible : en cas de doute, compare avec la <b>correction</b>, qui donne toujours la réponse et l'explication. Les calculs <b>🎲</b> tirent de nouvelles valeurs à chaque fois.</p>
+    <p><b>Progression</b> : un exercice est <b>validé</b> quand tous ses trous sont justes. Si la vérification refuse une réponse juste (faute de frappe, autre écriture équivalente), le bouton <b>✓ j'avais raison</b> le valide quand même ; clique sur le badge « ✓ validé ✕ » pour annuler. La progression est enregistrée dans ce navigateur (elle disparaît si tu effaces les données du site).</p>
+    <p><b>Format de l'examen</b> : des textes à trous sur les <span class="c-blue">définitions</span>, sur les <span class="c-gold">démonstrations</span> du cours et sur les <span class="c-purple">devoirs</span>. Les exercices sont rangés selon ces trois types (plus quelques <span class="c-green">calculs</span>). Les questions de devoir (HW1–HW4) se font sans avoir le sujet sous les yeux : tout le cadre et les données utiles sont dans l'énoncé.</p>
   </div>
   <div class="ex-toolbar">
     <div class="grp"><span>Chapitre</span>
       <button class="btn on" data-f="ch:all">tous</button><button class="btn" data-f="ch:1">1 · linéaire</button><button class="btn" data-f="ch:2">2 · logistique</button><button class="btn" data-f="ch:3">3 · SVM</button><button class="btn" data-f="ch:4">4 · sélection</button><button class="btn" data-f="ch:5">5 · réseaux</button><button class="btn" data-f="ch:6">6 · en ligne</button>
     </div>
     <div class="grp"><span>Type</span>
-      <button class="btn on" data-f="type:all">tous</button><button class="btn" data-f="type:def">définitions</button><button class="btn" data-f="type:deriv">démonstrations</button><button class="btn local-only" data-f="type:hw">devoirs</button><button class="btn" data-f="type:calc">calculs</button>
+      <button class="btn on" data-f="type:all">tous</button><button class="btn" data-f="type:def">définitions</button><button class="btn" data-f="type:deriv">démonstrations</button><button class="btn" data-f="type:hw">devoirs</button><button class="btn" data-f="type:calc">calculs</button>
     </div>
     <div class="grp"><button class="btn primary" id="ex-shuffle">🎲 ordre aléatoire</button><button class="btn" id="ex-reset">ordre du cours</button></div>
+    <div class="grp"><span>Statut</span><button class="btn on" data-f="st:all">tous</button><button class="btn" data-f="st:todo">à faire</button><button class="btn" data-f="st:done">validés</button></div>
     <span id="ex-count"></span>
-    <span id="ex-score"></span>
+    <span id="ex-progress" class="ex-progress"></span>
   </div>
+  <details class="ex-progress-box"><summary>Progression par chapitre</summary><div id="ex-progress-detail"></div><button class="btn" id="ex-progress-reset" type="button">effacer ma progression</button></details>
   <div id="ex-list"></div>
 </div>
 
@@ -55,8 +58,7 @@
 <script src="js/exercises/data-ch5.js"></script>
 <script src="js/exercises/data-ch6.js"></script>
 <script src="js/exercises/data-demos.js"></script>
-<!-- Questions sur les devoirs : fichier local (js/homework/ est exclu du dépôt public) ; absent en ligne -->
-<script src="js/homework/ex-hw.js" onerror="this.remove()"></script>
+<script src="js/exercises/data-hw.js"></script>
 <script>ML.EX.boot();</script>
 </body>
 </html>

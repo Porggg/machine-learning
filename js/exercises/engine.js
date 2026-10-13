@@ -61,9 +61,18 @@
   const prep = (html, map) => html.replace(/\\blank\{(\w+)\}/g, (_, k) => map ? map(k, true) : blankTex(k)).replace(/\[\[(\w+)\]\]/g, (_, k) => map ? map(k, false) : `<span class="blank-lbl">(${k})</span>`);
   const TYPES = { def: ['définition', 'c-blue'], deriv: ['démonstration à trous', 'c-gold'], calc: ['calcul', 'c-green'], hw: ['devoir', 'c-purple'] };
 
+  // ---------- progression (enregistrée dans ce navigateur) ----------
+  const KEY = 'ex-progress-v1';
+  let prog = {};
+  try { prog = JSON.parse(localStorage.getItem(KEY) || '{}') || {}; } catch (e) { prog = {}; }
+  const save = () => { try { localStorage.setItem(KEY, JSON.stringify(prog)); } catch (e) {} };
+  EX.isDone = id => !!prog[id];
+  EX.setDone = (id, how) => { if (how) prog[id] = { how, t: Date.now() }; else delete prog[id]; save(); EX.onProgress && EX.onProgress(); };
+  EX.resetProgress = () => { prog = {}; save(); EX.onProgress && EX.onProgress(); };
+
   function card(ex, num) {
     const h = ML.h;
-    const el = h('div', { class: 'ex-card', 'data-ch': ex.ch, 'data-type': ex.type });
+    const el = h('div', { class: 'ex-card', 'data-ch': ex.ch, 'data-type': ex.type, 'data-id': ex.id });
     let inst = ex.gen ? ex.gen(ML.math.rng(Math.floor(Math.random() * 1e9))) : ex;
     const head = h('div', { class: 'ex-head' });
     const body = h('div', { class: 'ex-body' }), inputs = h('div', { class: 'ex-inputs' }), fb = h('div', { class: 'ex-feedback' }), sol = h('div', { class: 'ex-solution' });
@@ -71,8 +80,8 @@
     el.append(head, body, inputs, bar, fb, sol);
     const state = {};
     function render() {
-      head.innerHTML = `<span class="ex-num">${num}</span><span class="ex-title">${ex.title}</span><span class="spacer"></span><span class="ex-type ${TYPES[ex.type][1]}">${TYPES[ex.type][0]}</span> <span class="src ${ex.srcKind || 'slides'}">${ex.src || ''}</span>`;
-      ML.renderMath(head);
+      head.innerHTML = `<span class="ex-num">${num}</span><span class="ex-title">${ex.title}</span><span class="spacer"></span><span class="ex-done"></span><span class="ex-type ${TYPES[ex.type][1]}">${TYPES[ex.type][0]}</span> <span class="src ${ex.srcKind || 'slides'}">${ex.src || ''}</span>`;
+      ML.renderMath(head); paintDone();
       ML.setMathHTML(body, prep(inst.text));
       inputs.innerHTML = ''; fb.innerHTML = ''; sol.innerHTML = ''; sol.style.display = 'none';
       for (const k of Object.keys(inst.blanks)) {
@@ -96,9 +105,24 @@
         state[k].mark.textContent = r === true ? '✓' : r === false ? '✗' : '…';
         if (r) ok++;
       }
-      fb.innerHTML = `<b>${ok}/${tot}</b> trou(s) correct(s)${ok === tot ? ' — bravo !' : ' — la vérification automatique est tolérante mais pas parfaite : compare avec la correction.'}`;
-      EX.score(el, ok === tot);
+      if (ok === tot) {
+        fb.innerHTML = `<b>${ok}/${tot}</b> trou(s) correct(s) — bravo, exercice validé !`;
+        EX.setDone(ex.id, 'auto');
+      } else {
+        fb.innerHTML = `<b>${ok}/${tot}</b> trou(s) correct(s). La vérification automatique est tolérante mais pas parfaite : compare avec la correction. Si ta réponse était juste (faute de frappe, autre écriture équivalente), tu peux valider toi-même. `;
+        const b = h('button', { class: 'btn', type: 'button' }, '✓ j\'avais raison');
+        b.addEventListener('click', () => { EX.setDone(ex.id, 'manual'); fb.innerHTML = 'Exercice validé à la main.'; });
+        fb.appendChild(b);
+      }
     }
+    function paintDone() {
+      const d = prog[ex.id], badge = head.querySelector('.ex-done');
+      el.classList.toggle('done', !!d);
+      if (!badge) return;
+      badge.innerHTML = d ? `<span title="cliquer pour annuler la validation">✓ validé${d.how === 'manual' ? ' (à la main)' : ''} ✕</span>` : '';
+      badge.onclick = d ? () => EX.setDone(ex.id, null) : null;
+    }
+    el._paint = paintDone;
     function correction() {
       const colored = (k, inMath) => { const b = inst.blanks[k], tex = b.tex ?? (b.kind === 'num' ? String(+(+b.ans).toPrecision(6)) : (Array.isArray(b.ans) ? b.ans[0] : b.ans)); return inMath ? fillTex(tex, '#83c167') : `<span class="blank-fill">${b.kind === 'word' ? tex : '$' + tex + '$'}</span>`; };
       sol.style.display = '';
@@ -117,24 +141,35 @@
   }
 
   // ---------- page ----------
-  const session = { ok: 0, tried: new Set(), solved: new Set() };
-  EX.score = (el, good) => { session.tried.add(el); if (good) session.solved.add(el); else session.solved.delete(el); EX.updScore(); };
-  EX.updScore = () => { const s = document.getElementById('ex-score'); if (s) s.innerHTML = `session : <b>${session.solved.size}</b> exercice(s) réussi(s) sur <b>${session.tried.size}</b> tenté(s) <span class="c-dim">(rien n'est sauvegardé)</span>`; };
   EX.boot = () => {
-    const host = document.getElementById('ex-list'), f = { ch: 'all', type: 'all' };
+    const host = document.getElementById('ex-list'), f = { ch: 'all', type: 'all', st: 'all' };
     // ordre du cours : par chapitre (tri stable), quel que soit le fichier d'où vient l'exercice
     const sorted = EX.list.map((ex, i) => [ex, i]).sort((a, b) => a[0].ch - b[0].ch || a[1] - b[1]).map(a => a[0]);
     const cards = sorted.map((ex, i) => card(ex, i + 1));
-    const layout = order => { host.innerHTML = ''; let n = 0; order.forEach(c => { const show = (f.ch === 'all' || c.dataset.ch === f.ch) && (f.type === 'all' || c.dataset.type === f.type); c.style.display = show ? '' : 'none'; if (show) { n++; c.querySelector('.ex-num').textContent = n; } host.appendChild(c); }); document.getElementById('ex-count').textContent = `${n} exercice(s)`; };
+    const inFilter = c => (f.ch === 'all' || c.dataset.ch === f.ch) && (f.type === 'all' || c.dataset.type === f.type);
+    const layout = order => { host.innerHTML = ''; let n = 0; order.forEach(c => { const done = EX.isDone(c.dataset.id), show = inFilter(c) && (f.st === 'all' || (f.st === 'done') === done); c.style.display = show ? '' : 'none'; if (show) { n++; c.querySelector('.ex-num').textContent = n; } host.appendChild(c); }); document.getElementById('ex-count').textContent = `${n} exercice(s)`; };
+    // barres de progression : sélection courante (chapitre + type), puis détail par chapitre
+    const CH = { 1: '1 · linéaire', 2: '2 · logistique', 3: '3 · SVM', 4: '4 · sélection', 5: '5 · réseaux', 6: '6 · en ligne' };
+    const barHTML = (d, n) => `<span class="pbar"><i style="width:${n ? (100 * d / n).toFixed(1) : 0}%"></i></span>`;
+    const progress = () => {
+      const sel = cards.filter(inFilter), d = sel.filter(c => EX.isDone(c.dataset.id)).length;
+      const top = document.getElementById('ex-progress');
+      if (top) top.innerHTML = `${barHTML(d, sel.length)}<b>${d}</b> / ${sel.length} validé(s)`;
+      const det = document.getElementById('ex-progress-detail');
+      if (det) det.innerHTML = Object.keys(CH).map(k => { const cs = cards.filter(c => c.dataset.ch === k && (f.type === 'all' || c.dataset.type === f.type)), dd = cs.filter(c => EX.isDone(c.dataset.id)).length; return `<div class="prow"><span class="plab">${CH[k]}</span>${barHTML(dd, cs.length)}<span class="pnum">${dd} / ${cs.length}</span></div>`; }).join('');
+    };
+    EX.onProgress = () => { cards.forEach(c => c._paint && c._paint()); progress(); if (f.st !== 'all') layout(order); };
     let order = cards.slice();
     document.querySelectorAll('[data-f]').forEach(b => b.addEventListener('click', () => {
       const [k, v] = b.dataset.f.split(':'); f[k] = v;
       document.querySelectorAll(`[data-f^="${k}:"]`).forEach(x => x.classList.toggle('on', x === b));
-      layout(order);
+      layout(order); progress();
     }));
     document.getElementById('ex-shuffle').addEventListener('click', () => { const r = ML.math.rng(Date.now() % 1e9); order = r.shuffle(cards); layout(order); });
     document.getElementById('ex-reset').addEventListener('click', () => { order = cards.slice(); layout(order); });
-    layout(order); EX.updScore();
+    const rst = document.getElementById('ex-progress-reset');
+    if (rst) rst.addEventListener('click', () => { if (confirm('Effacer toute ta progression (tous les exercices validés) ?')) EX.resetProgress(); });
+    layout(order); progress();
     ML.renderMath(document.querySelector('.ex-intro'));
   };
 })(window.ML);
