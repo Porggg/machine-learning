@@ -27,7 +27,7 @@
   <h1>Entraînement<span class="sub">Textes à trous dans le format de l'examen : définitions, démonstrations, devoirs</span></h1>
   <div class="ex-intro">
     <p>Chaque exercice contient des trous <span class="blank-lbl">(a)</span>, <span class="blank-lbl">(b)</span>… à remplir dans les champs dessous. Tu peux taper les formules en LaTeX (<code>\lambda</code>, <code>\frac{2}{N}</code>, <code>\Phi^\top</code>) ou en texte simple (<code>2/N</code>, <code>Phi^T</code>, <code>λ</code>, <code>(X^TX)^-1</code>) : un aperçu s'affiche à droite. La vérification automatique est tolérante (espaces, gras, notations de transposée, lettres grecques) mais pas infaillible : en cas de doute, compare avec la <b>correction</b>, qui donne toujours la réponse et l'explication. Les calculs <b>🎲</b> tirent de nouvelles valeurs à chaque fois. Rien n'est sauvegardé.</p>
-    <p><b>Format de l'examen</b> : des textes à trous sur les <span class="c-blue">définitions</span>, sur les <span class="c-gold">démonstrations</span> du cours et sur les <span class="c-purple">devoirs</span>. Les exercices sont rangés selon ces trois types (plus quelques <span class="c-green">calculs</span>). Le bouton <b>🎓 examen blanc</b> tire au hasard 3 définitions, 4 démonstrations, 2 questions de devoir et 1 calcul dans le chapitre choisi (ou dans tous) : fais-les sans indice ni correction, puis vérifie.<span class="local-only"> Les questions de devoir (HW1–HW4) ne sont visibles qu'en local, comme les corrigés.</span></p>
+    <p><b>Format de l'examen</b> : des textes à trous sur les <span class="c-blue">définitions</span>, sur les <span class="c-gold">démonstrations</span> du cours et sur les <span class="c-purple">devoirs</span>. Les exercices sont rangés selon ces trois types (plus quelques <span class="c-green">calculs</span>).<span class="local-only"> Les questions de devoir (HW1–HW4) se font sans avoir le sujet sous les yeux : tout le cadre et les données utiles sont dans l'énoncé. Elles ne sont visibles qu'en local, comme les corrigés.</span></p>
   </div>
   <div class="ex-toolbar">
     <div class="grp"><span>Chapitre</span>
@@ -36,11 +36,10 @@
     <div class="grp"><span>Type</span>
       <button class="btn on" data-f="type:all">tous</button><button class="btn" data-f="type:def">définitions</button><button class="btn" data-f="type:deriv">démonstrations</button><button class="btn local-only" data-f="type:hw">devoirs</button><button class="btn" data-f="type:calc">calculs</button>
     </div>
-    <div class="grp"><button class="btn primary" id="ex-exam">🎓 examen blanc</button><button class="btn" id="ex-shuffle">🎲 ordre aléatoire</button><button class="btn" id="ex-reset">ordre du cours</button></div>
+    <div class="grp"><button class="btn primary" id="ex-shuffle">🎲 ordre aléatoire</button><button class="btn" id="ex-reset">ordre du cours</button></div>
     <span id="ex-count"></span>
     <span id="ex-score"></span>
   </div>
-  <div id="ex-exam-banner" class="box warn" style="display:none;margin-top:16px"><div class="box-title">Examen blanc</div>10 exercices tirés au hasard. Remplis tous les trous sans ouvrir les indices ni la correction, puis clique « Vérifier » sur chacun. <button class="btn" id="ex-exam-quit" type="button">quitter l'examen blanc</button></div>
   <div id="ex-list"></div>
 </div>
 

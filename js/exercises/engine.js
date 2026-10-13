@@ -125,29 +125,15 @@
     // ordre du cours : par chapitre (tri stable), quel que soit le fichier d'où vient l'exercice
     const sorted = EX.list.map((ex, i) => [ex, i]).sort((a, b) => a[0].ch - b[0].ch || a[1] - b[1]).map(a => a[0]);
     const cards = sorted.map((ex, i) => card(ex, i + 1));
-    let exam = null; // sous-ensemble tiré pour l'examen blanc
-    const banner = document.getElementById('ex-exam-banner');
-    const layout = order => { host.innerHTML = ''; let n = 0; order.forEach(c => { const show = exam ? exam.has(c) : (f.ch === 'all' || c.dataset.ch === f.ch) && (f.type === 'all' || c.dataset.type === f.type); c.style.display = show ? '' : 'none'; if (show) { n++; c.querySelector('.ex-num').textContent = n; } host.appendChild(c); }); document.getElementById('ex-count').textContent = `${n} exercice(s)`; if (banner) banner.style.display = exam ? '' : 'none'; };
+    const layout = order => { host.innerHTML = ''; let n = 0; order.forEach(c => { const show = (f.ch === 'all' || c.dataset.ch === f.ch) && (f.type === 'all' || c.dataset.type === f.type); c.style.display = show ? '' : 'none'; if (show) { n++; c.querySelector('.ex-num').textContent = n; } host.appendChild(c); }); document.getElementById('ex-count').textContent = `${n} exercice(s)`; };
     let order = cards.slice();
     document.querySelectorAll('[data-f]').forEach(b => b.addEventListener('click', () => {
-      const [k, v] = b.dataset.f.split(':'); f[k] = v; exam = null;
+      const [k, v] = b.dataset.f.split(':'); f[k] = v;
       document.querySelectorAll(`[data-f^="${k}:"]`).forEach(x => x.classList.toggle('on', x === b));
       layout(order);
     }));
     document.getElementById('ex-shuffle').addEventListener('click', () => { const r = ML.math.rng(Date.now() % 1e9); order = r.shuffle(cards); layout(order); });
-    document.getElementById('ex-reset').addEventListener('click', () => { exam = null; order = cards.slice(); layout(order); });
-    // Examen blanc : dans le(s) chapitre(s) choisi(s), 3 définitions, 4 démonstrations, 2 devoirs (s'il y en a) et 1 calcul
-    const examBtn = document.getElementById('ex-exam');
-    if (examBtn) examBtn.addEventListener('click', () => {
-      const r = ML.math.rng(Date.now() % 1e9), pool = cards.filter(c => f.ch === 'all' || c.dataset.ch === f.ch);
-      const pick = (type, k) => r.shuffle(pool.filter(c => c.dataset.type === type)).slice(0, k);
-      const hw = pick('hw', 2), chosen = [...pick('def', 3), ...pick('deriv', 4 + (2 - hw.length)), ...hw, ...pick('calc', 1)];
-      exam = new Set(chosen); order = r.shuffle(cards); layout(order);
-      chosen.forEach(c => { const b = [...c.querySelectorAll('button')].find(x => x.textContent === 'Effacer'); if (b) b.click(); });
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    });
-    const quit = document.getElementById('ex-exam-quit');
-    if (quit) quit.addEventListener('click', () => { exam = null; order = cards.slice(); layout(order); });
+    document.getElementById('ex-reset').addEventListener('click', () => { order = cards.slice(); layout(order); });
     layout(order); EX.updScore();
     ML.renderMath(document.querySelector('.ex-intro'));
   };
