@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Apprentissage en ligne — Cours interactif ML</title>
+<link rel="stylesheet" href="lib/katex/katex.min.css">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <a class="brand" href="index.html"><span class="pi">∇</span>ML · POSTECH</a>
+  <nav>
+    <a href="index.html">Accueil</a>
+    <a href="linear-regression.html">1 · Régression linéaire</a>
+    <a href="logistic-regression.html">2 · Régression logistique</a>
+    <a href="svm.html">3 · SVM</a>
+    <a href="model-selection.html">4 · Sélection de modèle</a>
+    <a href="neural-networks.html">5 · Réseaux de neurones</a>
+    <a href="online-learning.html" class="active">6 · Apprentissage en ligne</a>
+    <a href="exercises.html">Entraînement</a>
+    <a class="local-only" href="homework.html">Devoirs</a>
+  </nav>
+</header>
+
+<div class="layout">
+<aside class="sidebar">
+  <h4>Sommaire</h4>
+  <div class="toc"></div>
+  <div class="legend">
+    <h4>Sources</h4>
+    <div><span class="src slides">Slides</span> au programme (slides du cours)</div>
+    <div><span class="src book">PRML / DL / MLAPP</span> manuel de référence (lien → page)</div>
+    <div><span class="src extra">Hors slides</span> complément, pas dans les slides</div>
+  </div>
+</aside>
+
+<main class="content"><div class="content-inner">
+
+<h1>Apprentissage en ligne<span class="sub">Online Learning — Regret · Exponential Weighting · Cours 11 (10/15)</span></h1>
+<div class="sources">
+  <a class="src slides" href="../Slides/7-online-learning.pdf" target="_blank">Slides 7-online-learning (23 p.)</a>
+  <a class="src book" href="../Textbooks/Machine%20Learning%20-%20A%20Probabilistic%20Perspective.pdf#page=293" target="_blank">MLAPP §8.5.1 Online learning and regret minimization p.262</a>
+  <span class="src book">Lecture officielle : FML (Mohri et al.) ch. 8.2 — pas dans le dossier Textbooks</span>
+</div>
+
+<p>Tous les chapitres précédents reposaient sur une hypothèse silencieuse : les exemples sont tirés <b>i.i.d.</b> d'une loi <b>fixe</b> $P$, et on juge un modèle par son erreur de généralisation $L(f) = \E_P[\ell]$ (chapitre 4). Ce chapitre répond à <strong>une seule question</strong> : <em>que peut-on encore garantir quand il n'y a <b>plus de loi</b> du tout — quand les données arrivent une par une, changent de comportement, ou sont même choisies par un adversaire qui connaît notre algorithme ?</em> La réponse tient en trois idées : changer de mesure (le <b>regret</b>, qui compare à ce qu'on aurait pu faire), <b>randomiser</b> ses prédictions pour ne pas être prévisible, et pondérer des experts de façon <b>exponentielle</b> en leurs erreurs. Au début de chaque section, un encadré <span class="c-teal"><b>Où on en est</b></span> fait le point.</p>
+
+<h2 id="roadmap">Feuille de route</h2>
+<div class="sources"><a class="src slides" href="../Slides/7-online-learning.pdf#page=2" target="_blank">Slides p.2–4 (motivation et plan)</a></div>
+<p>Les slides ont deux parties : <b>une métrique</b> (le regret) et <b>un algorithme</b> (exponential weighting). Entre les deux, un résultat négatif explique pourquoi l'algorithme doit être aléatoire. La chaîne complète, cliquable :</p>
+<div class="flow">
+<a class="st" href="#why"><b>① Cadre · §1</b>plus d'hypothèse i.i.d.<i>les exemples arrivent un par un, éventuellement choisis par un adversaire</i></a><div class="ar">→</div>
+<a class="st" href="#regret"><b>② Métrique · §2</b>regret = ma perte − celle du meilleur expert<i>objectif : $\mathrm{Reg}_T = O(\sqrt T)$</i></a><div class="ar">→</div>
+<a class="st" href="#negative"><b>③ Obstacle · §3</b>un apprenant déterministe a $\mathrm{Reg}_T\ge T/2$<i>il faut randomiser</i></a><div class="ar">→</div>
+<a class="st" href="#wm"><b>④ Première idée · §4</b>Weighted Majority : vote pondéré<i>bon nombre d'erreurs, mais déterministe</i></a><div class="ar">→</div>
+<a class="st" href="#ew"><b>⑤ Algorithme · §5</b>tirer un expert $I_t\sim p_t$, poids $e^{-\eta L}$<i>Randomized WM → Exponential Weighting</i></a><div class="ar">→</div>
+<a class="st goal" href="#theorem"><b>⑥ Garantie · §6</b>$\E[\mathrm{Reg}_T]\le\sqrt{T\ln|\mathcal H|}$<i>regret moyen → 0, sans aucune hypothèse sur les données</i></a>
+</div>
+
+<h3 id="roadmap-why">Le raisonnement, maillon par maillon</h3>
+<ol class="plan">
+<li><span class="n">①</span><b>Le cadre change.</b> Plus de loi fixe : la suite $(x_t,y_t)$ peut dériver, ou être fabriquée par un adversaire qui observe nos prédictions passées. <span class="why">L'erreur de généralisation $\E_P[\ell]$ n'a plus de sens (il n'y a pas de $P$). → Il faut une autre mesure de qualité.</span></li>
+<li><span class="n">②</span><b>La bonne mesure.</b> La perte cumulée seule ne suffit pas : si la suite est très difficile, tout le monde se trompe beaucoup. <span class="why">On se compare donc au <b>meilleur expert a posteriori</b> d'un ensemble fini $\mathcal H$ : c'est le <b>regret</b>. On veut qu'il croisse moins vite que $T$ (idéalement comme $\sqrt T$), pour que le regret <em>par tour</em> tende vers 0.</span></li>
+<li><span class="n">③</span><b>L'obstacle.</b> Si l'apprenant est déterministe, l'adversaire peut calculer sa prédiction et jouer l'inverse : perte $T$. <span class="why">Avec deux experts « toujours $-1$ » et « toujours $+1$ », l'un des deux a au plus $T/2$ erreurs. Regret $\ge T/2$ : linéaire, perdu. → Il faut que la prédiction soit imprévisible : la tirer au hasard.</span></li>
+<li><span class="n">④</span><b>Une première idée : pondérer les experts.</b> Weighted Majority fait voter les experts, chacun avec un poids, et multiplie par $\beta$ le poids de ceux qui se trompent. <span class="why">Son nombre d'erreurs est contrôlé par celui du meilleur expert, mais il reste déterministe (donc battu par l'adversaire) et limité à la classification.</span></li>
+<li><span class="n">⑤</span><b>Randomiser, puis lisser.</b> Au lieu de voter, on <b>tire</b> un expert avec probabilité proportionnelle à son poids. <span class="why">En écrivant la pénalité $(1-\eta)^{\ell}$, puis $e^{-\eta\ell}$, on obtient l'<b>exponential weighting</b> : valable pour toute perte dans $[0,1]$, et $p_t$ est une softmax des pertes cumulées.</span></li>
+<li><span class="n">⑥</span><b>La garantie.</b> <span class="why">Un argument de potentiel ($W_t = \sum_iw_t(i)$) et le lemme de Hoeffding donnent $\E[\mathrm{Reg}_T]\le\frac{\ln K}\eta+\frac{\eta T}8$, puis $\sqrt{T\ln K/2}$ avec le bon $\eta$ : aucune hypothèse sur les données, et seulement $\ln K$ pour $K$ experts.</span></li>
+</ol>
+
+<div class="box intu"><div class="box-title">À la fin du chapitre, tu dois savoir…</div>
+<ul>
+<li>écrire le protocole de l'apprentissage en ligne avec experts, et le comparer au cadre statistique ;</li>
+<li>définir perte cumulée, meilleur expert a posteriori, regret statique et dynamique, et expliquer pourquoi on vise $\mathrm{Reg}_T = O(\sqrt T)$ ;</li>
+<li>démontrer que tout apprenant déterministe a un regret $\ge T/2$, et expliquer pourquoi la randomisation (contre un adversaire non anticipant) contourne ce résultat ;</li>
+<li>dérouler Weighted Majority, Randomized Weighted Majority et Exponential Weighting sur un petit exemple ;</li>
+<li>démontrer la borne $\E[\mathrm{Reg}_T]\le\frac{\ln K}{\eta}+\frac{\eta T}{8}$ et en déduire le choix $\eta = \sqrt{8\ln K/T}$.</li>
+</ul></div>
+
+<h2 id="notations">Notations du chapitre</h2>
+<p>Toutes les lettres utilisées dans la page (et dans les slides), au même endroit. Plusieurs lettres changent de sens d'une slide à l'autre : voir l'encadré qui suit le tableau.</p>
+<div class="notation-wrap"><table class="notation">
+<thead><tr><th>Symbole</th><th>Se lit / signifie</th><th>Nature</th><th>Où</th></tr></thead>
+<tbody>
+<tr class="grp"><td colspan="4">Le protocole</td></tr>
+<tr><td>$t,\ T$</td><td>numéro du tour ; nombre total de tours (<b>horizon</b>, time horizon)</td><td>entiers</td><td class="where">partout</td></tr>
+<tr><td>$x_t,\ y_t$</td><td>entrée et vraie étiquette du tour $t$ (révélée <b>après</b> la prédiction)</td><td>$\mathcal X$, $\mathcal Y$</td><td class="where">partout</td></tr>
+<tr><td>$\hat y_t$</td><td>prédiction de l'apprenant au tour $t$</td><td>$\mathcal Y$</td><td class="where">partout</td></tr>
+<tr><td>$\mathcal H = \{h_1,\dots,h_K\}$, $K = |\mathcal H|$</td><td>ensemble <b>fini</b> d'experts (de prédicteurs fixés), et leur nombre</td><td>ensemble de fonctions</td><td class="where">§2 →</td></tr>
+<tr><td>$\hat y_{t,k} = \hat h_{t,k}(x_t)$</td><td>prédiction de l'expert $k$ au tour $t$ (slide 3)</td><td>$\mathcal Y$</td><td class="where">§1</td></tr>
+<tr><td>$\ell(y,\hat y)$, $\ell_t(i)$</td><td>perte, à valeurs dans $[0,1]$ ; abréviation $\ell_t(i) := \ell(y_t,h_i(x_t))$ = perte de l'expert $i$ au tour $t$ <span class="c-dim">(hors slides)</span></td><td>réel $\in[0,1]$</td><td class="where">partout</td></tr>
+<tr class="grp"><td colspan="4">Mesurer un apprenant (§2)</td></tr>
+<tr><td>$L_{T,i} = \sum_{t=1}^T\ell_t(i)$</td><td>perte cumulée de l'expert $i$ <span class="c-dim">(hors slides)</span></td><td>réel $\ge0$</td><td class="where">§2, §6</td></tr>
+<tr><td>$L^\star = \min_iL_{T,i}$</td><td>perte du <b>meilleur expert a posteriori</b> (best in hindsight)</td><td>réel $\ge0$</td><td class="where">§2, §6</td></tr>
+<tr><td>$\mathrm{Reg}_T$</td><td><b>regret</b> : perte cumulée de l'apprenant − $L^\star$</td><td>réel</td><td class="where">§2 →</td></tr>
+<tr><td>$\mathrm{Reg}^{\text{static}}_T,\ \mathrm{Reg}^{\text{dynamic}}_T$</td><td>regret contre un expert fixe ; contre une suite d'experts $(h_1,\dots,h_T)\in\mathcal H^T$</td><td>réels</td><td class="where">§2</td></tr>
+<tr class="grp"><td colspan="4">Algorithmes (§4–6)</td></tr>
+<tr><td>$w_t(i)$</td><td><b>poids</b> de l'expert $i$ au début du tour $t$ ; $w_1(i) = 1$</td><td>réel $>0$</td><td class="where">§4 →</td></tr>
+<tr><td>$W_t = \sum_iw_t(i)$</td><td>poids total (le <b>potentiel</b> des preuves) <span class="c-dim">(hors slides)</span></td><td>réel $>0$</td><td class="where">§4, §6</td></tr>
+<tr><td>$p_t(i) = w_t(i)/W_t$</td><td>probabilité de suivre l'expert $i$ au tour $t$</td><td>$p_t\in$ simplexe</td><td class="where">§5 →</td></tr>
+<tr><td>$I_t\sim p_t$</td><td>expert <b>tiré</b> au tour $t$ ; $\hat y_t = h_{I_t}(x_t)$</td><td>indice aléatoire</td><td class="where">§5 →</td></tr>
+<tr><td>$\langle p_t,\ell_t\rangle$</td><td>perte <b>espérée</b> de l'apprenant au tour $t$ : $\sum_ip_t(i)\ell_t(i)$ <span class="c-dim">(hors slides)</span></td><td>réel $\in[0,1]$</td><td class="where">§6</td></tr>
+<tr><td>$\beta\in(0,1)$</td><td>facteur de pénalité de Weighted Majority</td><td>réel</td><td class="where">§4, §5</td></tr>
+<tr><td>$\eta>0$</td><td>taux d'apprentissage : $\beta = 1-\eta$ (RWM), poids $e^{-\eta\ell}$ (EW)</td><td>réel</td><td class="where">§5, §6</td></tr>
+<tr><td>$M_T,\ m^\star$</td><td>nombre d'erreurs de Weighted Majority ; nombre d'erreurs du meilleur expert <span class="c-dim">(hors slides)</span></td><td>entiers</td><td class="where">§4</td></tr>
+</tbody></table></div>
+
+<div class="box warn"><div class="box-title">Pièges de notation (ils viennent des slides)</div>
+<ol>
+<li><b>$h$ a trois rôles</b> : $h_t$ = le prédicteur que l'apprenant utilise au tour $t$ (slide 7) ; $h_i$ ou $h_k$ = l'expert numéro $i$ de $\mathcal H$ (slides 6, 16) ; $h_{-1}$, $h_{+1}$ = deux experts constants (slide 12), indexés par leur prédiction. L'indice dit lequel : temps, numéro d'expert, ou valeur prédite.</li>
+<li><b>Étiquettes</b> : $\{-1,+1\}$ pour le résultat négatif (slide 11), $\{0,1\}$ pour Weighted Majority (slide 16).</li>
+<li><b>$\mathrm{Reg}_T$ est aléatoire</b> pour un apprenant randomisé : la slide 22 borne son <b>espérance</b>, prise sur le hasard interne de l'apprenant (les tirages $I_t$), pas sur les données (il n'y a pas de loi sur les données).</li>
+<li><b>$\eta$</b> n'est plus un pas de gradient (chapitres 1–5) mais la « sensibilité » des poids aux erreurs. Et $\beta = 1-\eta$ (slide 19).</li>
+<li><b>Le meilleur expert est choisi a posteriori</b>, après avoir vu les $T$ tours : il n'est pas connu pendant le jeu, sinon il suffirait de le suivre.</li>
+<li><b>$\ln$</b> est le logarithme népérien ; la borne de la slide 22 contient $\ln|\mathcal H|$.</li>
+<li><b>$L$</b> désignait l'erreur de généralisation au chapitre 4 et le nombre de couches au chapitre 5 ; ici $L_{T,i}$ et $L^\star$ sont des pertes cumulées.</li>
+</ol></div>
+
+<div class="box intu"><div class="box-title">Mode d'emploi des scènes</div>
+<ul>
+<li><b>▶ Lecture</b> fait avancer les tours ; « Pas +1 » avance d'un cran ; ↺ recommence (avec une autre séquence quand c'est pertinent).</li>
+<li>Les points à halo se déplacent à la souris. <b>◉ Affichage</b> (en haut à droite) masque ou affiche les éléments de chaque figure.</li>
+<li>Les séquences sont générées par un générateur aléatoire à graine : « nouvelle séquence » en tire une autre.</li>
+</ul></div>
+
+<!-- ===================================================================== -->
+<h2 id="why"><span class="num">1</span>Pourquoi l'apprentissage en ligne ?</h2>
+<div class="sources"><a class="src slides" href="../Slides/7-online-learning.pdf#page=2" target="_blank">Slides p.2–3</a><a class="src book" href="../Textbooks/Machine%20Learning%20-%20A%20Probabilistic%20Perspective.pdf#page=293" target="_blank">MLAPP §8.5.1</a></div>
+<div class="box road"><div class="box-title">Où on en est</div><div class="road-row"><span class="rk ok">Acquis</span><div>Chapitres 1–5 : apprentissage <b>statistique</b>. Données i.i.d. d'une loi fixe $P$, objectif $L(f) = \E_P[\ell]$, garanties « en moyenne sur l'échantillon » (chapitre 4).</div></div><div class="road-row"><span class="rk q">Il manque</span><div>Que faire quand la loi change (distribution shift), ou quand les données sont produites par quelqu'un qui réagit à nos prédictions (spam, fraude, marchés) ?</div></div><div class="road-row"><span class="rk go">Cette partie</span><div>Le cadre en ligne : aucune hypothèse sur la suite, apprentissage tour par tour, et l'exemple des slides (prévisions météo de $K$ experts).</div></div></div>
+<div class="vids"><div class="vids-title">▶ Vidéos<span>en anglais · s'ouvrent sur YouTube</span></div><div class="vids-grid"><a class="vid" href="https://www.youtube.com/watch?v=5FkFjkHAMak" target="_blank" rel="noopener"><span class="vid-thumb">▶<img src="https://i.ytimg.com/vi/5FkFjkHAMak/mqdefault.jpg" loading="lazy" alt="" onerror="this.remove()"></span><span class="vid-body"><span class="vid-ch">Wandida, EPFL · Lê Nguyên Hoang</span><span class="vid-t" style="display:block">Motivations and Applications of the Multiplicative Weights Update Algorithm</span><span class="vid-why" style="display:block">Pourquoi on veut apprendre « contre n'importe quelle suite », avec des experts.</span></span></a></div></div>
+
+<div class="box def"><div class="box-title">Apprentissage statistique vs apprentissage en ligne (slide 2)</div>
+<div class="notation-wrap"><table class="notation">
+<thead><tr><th></th><th>Statistique (chapitres 1–5)</th><th>En ligne (ce chapitre)</th></tr></thead>
+<tbody>
+<tr><td><b>Loi</b></td><td>une loi $P$ <b>fixe</b> sur $\mathcal X\times\mathcal Y$</td><td><b>aucune</b> hypothèse de loi</td></tr>
+<tr><td><b>Dépendance</b></td><td>exemples <b>indépendants</b>, identiquement distribués</td><td>suite <b>arbitraire</b>, ou <b>adaptative</b> (qui réagit à l'apprenant)</td></tr>
+<tr><td><b>Déroulement</b></td><td>tout l'échantillon d'un coup, puis évaluation</td><td>un exemple par tour : prédire, puis recevoir la vérité</td></tr>
+<tr><td><b>Objectif</b></td><td>erreur de généralisation $L(f)$</td><td>regret (§2)</td></tr>
+</tbody></table></div>
+<p><b>Nouvelle question</b> : sans hypothèse de loi, comment apprendre un modèle performant ?</p>
+</div>
+
+<div class="box def"><div class="box-title">Protocole avec conseils d'experts (slide 3)</div>
+Pour $t = 1,\dots,T$ :
+<ol>
+<li>chaque expert observe $x_t$ et prédit $\hat y_{t,k} = \hat h_{t,k}(x_t)$, $k = 1,\dots,K$ ;</li>
+<li>l'apprenant reçoit les prédictions des experts $\hat y_{t,1},\dots,\hat y_{t,K}$ ;</li>
+<li>l'apprenant produit sa prédiction $\hat y_t$ à partir de $\hat y_{t,1},\dots,\hat y_{t,K}$ ;</li>
+<li>l'apprenant reçoit la vraie étiquette $y_t$ ;</li>
+<li>il subit la perte $\ell(y_t,\hat y_t)$ ;</li>
+<li>il met à jour ses paramètres.</li>
+</ol>
+</div>
+<details class="objs" open><summary>Les objets en jeu</summary><dl>
+<dt>expert</dt><dd><span class="ty">prédicteur donné</span>Une source de prédictions qu'on ne contrôle pas : un site météo, un modèle déjà entraîné, une règle simple. L'apprenant n'apprend pas les experts, il apprend <b>à qui faire confiance</b>.</dd>
+<dt>$\hat y_t$</dt><dd><span class="ty">décision</span>Elle doit être produite <b>avant</b> de voir $y_t$ : c'est ce qui rend le problème difficile. Ensuite seulement, la perte est révélée.</dd>
+<dt>« full feedback »</dt><dd><span class="ty">ce qu'on observe</span>Après chaque tour on voit $y_t$, donc la perte de <b>tous</b> les experts, pas seulement de celui qu'on a suivi (slide 23). Avec une information partielle, on parle de bandits ; on y reviendra en apprentissage par renforcement.</dd>
+</dl></details>
+<p>Dans la scène, quatre sites météo prédisent soleil ou pluie. L'apprenant donne un poids à chacun, tire un expert au hasard selon ces poids, puis met à jour les poids quand la vérité arrive. Au milieu de la séquence, le meilleur site change : c'est un <em>distribution shift</em>, et les poids doivent basculer.</p>
+<div data-scene="ol-protocol"></div>
+<div class="box intu"><div class="box-title">Pourquoi ce cadre est utile</div>
+Les experts n'ont pas besoin d'être bons « en moyenne sous une loi » : ils peuvent être bons à certaines périodes et mauvais à d'autres. Les garanties de ce chapitre tiennent pour <b>toute</b> suite de données, même choisie pour nous nuire. C'est une garantie plus forte que celle du chapitre 4, en échange d'une ambition plus modeste : faire presque aussi bien que le meilleur expert, pas aussi bien que la meilleure fonction possible.
+</div>
+
+<!-- ===================================================================== -->
+<h2 id="regret"><span class="num">2</span>Mesurer un apprenant : le regret</h2>
+<div class="sources"><a class="src slides" href="../Slides/7-online-learning.pdf#page=5" target="_blank">Slides p.5–10</a></div>
+<div class="box road"><div class="box-title">Où on en est</div><div class="road-row"><span class="rk ok">Acquis</span><div>Le protocole : prédire, puis voir la vérité, tour après tour, sans loi sur les données.</div></div><div class="road-row"><span class="rk q">Il manque</span><div>Un critère pour dire qu'un apprenant est « bon », qui ait un sens même quand la suite est arbitraire.</div></div><div class="road-row"><span class="rk go">Cette partie</span><div>Perte cumulée, meilleure perte cumulée, <b>regret</b> ; l'environnement adversarial ; l'objectif $\mathrm{Reg}_T = O(\sqrt T)$ ; regret statique vs dynamique.</div></div></div>
+
+<div class="box def"><div class="box-title">Perte cumulée (slide 5) · meilleure perte cumulée (slide 6)</div>
+Si l'apprenant prédit $\hat y_t := h_t(x_t)$, sa <b>perte cumulée</b> est
+$$\sum_{t=1}^T\ell(y_t,\hat y_t).$$
+Pour un ensemble fini $\mathcal H = \{h_1,\dots,h_K\}$, la <b>meilleure perte cumulée</b> est celle du meilleur prédicteur <b>a posteriori</b> (in hindsight), après les $T$ tours :
+$$\min_{h\in\mathcal H}\sum_{t=1}^T\ell\big(y_t,h(x_t)\big).$$
+C'est la performance de référence (benchmark).
+</div>
+<div class="box q"><div class="box-title">La perte cumulée suffit-elle sous distribution shift ? (slide 5)</div>
+<details class="proof"><summary>Réponse</summary><div class="proof-body"><p>Non. La perte cumulée dépend surtout de la <b>difficulté</b> de la suite : si les étiquettes sont du bruit pur, tout apprenant fait environ $T/2$ erreurs, et ce n'est pas sa faute. Sans hypothèse de loi, on ne peut pas dire si « 300 erreurs » est bon ou mauvais. Il faut une <b>référence</b> calculée sur la même suite : la perte du meilleur expert a posteriori. Le regret mesure l'écart à cette référence, et il a un sens même si la suite change ou est adverse.</p></div></details></div>
+
+<div class="box def"><div class="box-title">Regret (slide 7)</div>
+$$\mathrm{Reg}_T := \sum_{t=1}^T\ell\big(y_t,h_t(x_t)\big)-\min_{h\in\mathcal H}\sum_{t=1}^T\ell\big(y_t,h(x_t)\big).$$
+Le regret mesure la qualité de l'apprenant par l'écart entre la perte de sa suite de prédicteurs $h_1,\dots,h_T$ et la meilleure performance de référence.
+</div>
+<details class="objs" open><summary>Les objets en jeu</summary><dl>
+<dt>$h_t$</dt><dd><span class="ty">choix de l'apprenant</span>Il peut changer à chaque tour ; il dépend de tout ce que l'apprenant a vu avant le tour $t$.</dd>
+<dt>$\min_{h\in\mathcal H}$</dt><dd><span class="ty">comparateur</span>Un seul expert, le même pour les $T$ tours, choisi <b>après coup</b> en connaissant toute la suite. Il « triche » (il connaît l'avenir) mais il n'a pas le droit de changer d'avis.</dd>
+<dt>signe du regret</dt><dd><span class="ty">réel</span>Il peut être <b>négatif</b> : en changeant d'expert au bon moment, l'apprenant peut battre tout expert fixe. On veut surtout qu'il ne soit pas grand.</dd>
+</dl></details>
+
+<div class="box def"><div class="box-title">Environnement adversarial non anticipant (slide 8)</div>
+Un adversaire génère $(x_t,y_t)$ de façon arbitraire, en pouvant dépendre des <b>prédictions passées</b> de l'apprenant $\hat y_1,\dots,\hat y_{t-1}$. On l'appelle simplement « environnement adversarial ». Un environnement stochastique (i.i.d.) en est un cas particulier.
+</div>
+<div class="box q"><div class="box-title">Le regret fait-il une hypothèse stochastique ? Et si un adversaire manipule $(x_t,y_t)$ ? (slide 7)</div>
+<details class="proof"><summary>Réponse</summary><div class="proof-body"><p><b>Aucune hypothèse</b> : la définition ne contient que la suite effectivement observée, pas de loi ni d'espérance sur les données. Si un adversaire rend la suite difficile, il la rend difficile <b>aussi pour le comparateur</b> : la perte du meilleur expert augmente avec celle de l'apprenant. Pour avoir un grand regret, l'adversaire doit faire échouer l'apprenant <b>sans</b> faire échouer tous les experts. Le §3 montre qu'il y arrive contre un apprenant déterministe, et le §6 qu'il n'y arrive pas contre l'exponential weighting.</p></div></details></div>
+<div class="box q"><div class="box-title">Pourquoi les prédictions passées, et pas la prédiction courante ? (slide 8)</div>
+<details class="proof"><summary>Réponse</summary><div class="proof-body"><p>Si l'adversaire voyait $\hat y_t$ avant de choisir $y_t$, il jouerait toujours $y_t\ne\hat y_t$ : l'apprenant se tromperait à chaque tour, même en tirant $\hat y_t$ à pile ou face, et aucun algorithme ne pourrait rien garantir (le §3 donne alors un regret $\ge T/2$ pour <b>tout</b> apprenant). L'adversaire non anticipant peut connaître l'algorithme et tout le passé, donc la <b>distribution</b> $p_t$ de la prochaine prédiction, mais pas le <b>tirage</b>. C'est le plus fort adversaire contre lequel on peut encore gagner.</p></div></details></div>
+
+<div class="box def"><div class="box-title">Objectif : minimiser le regret (slide 9)</div>
+Trouver un apprenant qui minimise $\mathrm{Reg}_T$ dans un environnement adversarial, pour <b>tout</b> $\mathcal H$ fini et <b>toute</b> suite de données. Plus précisément : un apprenant avec $\mathrm{Reg}_T = O(\sqrt T)$.
+</div>
+<details class="proof"><summary>Pourquoi un regret <b>sous-linéaire</b> est le bon critère (et pourquoi $\sqrt T$) — question de la slide 9</summary>
+<div class="proof-body">
+<div class="step"><b>① Sous-linéaire ⇔ regret moyen → 0.</b> « $\mathrm{Reg}_T = o(T)$ » veut dire par définition $\frac{\mathrm{Reg}_T}T\to0$. Or $\frac{\mathrm{Reg}_T}T$ est l'écart <b>par tour</b> entre la perte moyenne de l'apprenant et celle du meilleur expert. Sous-linéaire = « à la longue, on fait en moyenne aussi bien que le meilleur expert, sans savoir à l'avance lequel c'est ».</div>
+<div class="step"><b>② Avec $\mathrm{Reg}_T\le c\sqrt T$</b> : $\frac{\mathrm{Reg}_T}T\le\frac{c}{\sqrt T}\to0$, avec une vitesse explicite. Un regret linéaire $\mathrm{Reg}_T\ge aT$ ($a>0$), au contraire, veut dire qu'on perd $a$ par tour pour toujours : on n'apprend pas.</div>
+<div class="step"><b>③ Pourquoi on ne peut pas espérer mieux que $\sqrt T$</b> <span class="hint">hors slides</span>. Prenons deux experts dont les pertes 0-1 sont des pile ou face indépendants et équilibrés, à chaque tour. Quel que soit l'apprenant, sa perte espérée au tour $t$ vaut $\frac12$ (la perte de chaque expert est indépendante du passé), donc sa perte cumulée espérée vaut $\frac T2$. Mais $\min(L_1,L_2) = \frac{L_1+L_2}2-\frac{|L_1-L_2|}2$, et $L_1-L_2$ est une somme de $T$ variables indépendantes centrées de variance $\frac12$, donc de l'ordre de $\sqrt{T/2}$ (théorème central limite : $\E|L_1-L_2|\approx\sqrt{T/\pi}$). Donc $\E[\min_iL_{T,i}]\approx\frac T2-\frac12\sqrt{T/\pi}$ et $\E[\mathrm{Reg}_T]\approx\frac12\sqrt{T/\pi}$ : <b>tout</b> apprenant a un regret d'ordre $\sqrt T$ sur cet exemple, même aléatoire et pas adverse.
+<div class="why">Intuition : le meilleur expert a posteriori bénéficie de la chance (ses fluctuations sont d'ordre $\sqrt T$), et l'apprenant ne peut pas prévoir la chance. $\sqrt T$ est donc la bonne échelle, et le §6 montre qu'on l'atteint.</div></div>
+<div class="qed">∎</div>
+</div></details>
+
+<div class="box def"><div class="box-title">Regret statique et regret dynamique (slide 10)</div>
+$$\mathrm{Reg}^{\text{static}}_T := \sum_{t=1}^T\ell(y_t,\hat y_t)-\min_{h\in\mathcal H}\sum_{t=1}^T\ell\big(y_t,h(x_t)\big),\qquad\mathrm{Reg}^{\text{dynamic}}_T := \sum_{t=1}^T\ell(y_t,\hat y_t)-\min_{(h_1,\dots,h_T)\in\mathcal H^T}\sum_{t=1}^T\ell\big(y_t,h_t(x_t)\big).$$
+<b>Statique</b> : le comparateur est un expert fixe pour tous les tours. <b>Dynamique</b> : il peut changer au cours du temps ; pour une garantie utile, on doit limiter son nombre de changements. Ce cours analyse l'exponential weighting avec le regret <b>statique</b>.
+</div>
+<details class="proof"><summary>Preuve — le regret dynamique est toujours plus grand, et il peut être forcé à être linéaire <span class="hint">hors slides</span></summary>
+<div class="proof-body">
+<div class="step"><b>① Le comparateur dynamique est plus fort.</b> Pour tout $h\in\mathcal H$, la suite constante $(h,h,\dots,h)$ appartient à $\mathcal H^T$. Le minimum sur $\mathcal H^T$ est donc $\le$ le minimum sur les suites constantes, c'est-à-dire $\le\min_h\sum_t\ell(y_t,h(x_t))$. On retranche un nombre plus petit : $\mathrm{Reg}^{\text{dynamic}}_T\ge\mathrm{Reg}^{\text{static}}_T$.</div>
+<div class="step"><b>② Le minimum sur $\mathcal H^T$ se calcule tour par tour.</b> La somme $\sum_t\ell(y_t,h_t(x_t))$ se découpe en termes qui ne dépendent chacun que d'un $h_t$ : on minimise chacun séparément, $\min_{(h_t)}\sum_t\ell = \sum_t\min_{h\in\mathcal H}\ell(y_t,h(x_t))$.</div>
+<div class="step"><b>③ Exemple où il est linéaire.</b> Avec $\mathcal H = \{h_{-1},h_{+1}\}$ (experts constants) et la perte 0-1, à chaque tour l'un des deux a raison : $\min_h\ell(y_t,h) = 0$, et le comparateur dynamique a une perte <b>nulle</b>. Le regret dynamique est alors la perte de l'apprenant tout entière ; un adversaire non anticipant qui joue l'étiquette la moins probable sous $p_t$ lui inflige au moins $\frac12$ par tour en espérance : $\E[\mathrm{Reg}^{\text{dynamic}}_T]\ge\frac T2$.
+<div class="why">Moralité : se comparer à un oracle qui change d'avis à chaque tour est trop ambitieux sans hypothèse. D'où la restriction du nombre de changements de la slide 10. Dans la scène, coche « comparateur et regret dynamiques ».</div></div>
+<div class="qed">∎</div>
+</div></details>
+<div data-scene="ol-regret"></div>
+
+<!-- ===================================================================== -->
+<h2 id="negative"><span class="num">3</span>Un résultat négatif : il faut randomiser</h2>
+<div class="sources"><a class="src slides" href="../Slides/7-online-learning.pdf#page=11" target="_blank">Slides p.11–13</a></div>
+<div class="box road"><div class="box-title">Où on en est</div><div class="road-row"><span class="rk ok">Acquis</span><div>Le regret, et l'objectif : $\mathrm{Reg}_T$ sous-linéaire contre tout adversaire non anticipant.</div></div><div class="road-row"><span class="rk q">Il manque</span><div>Savoir si c'est seulement possible. Peut-on obtenir un regret sous-linéaire avec un algorithme « raisonnable » et déterministe ?</div></div><div class="road-row"><span class="rk go">Cette partie</span><div>Non : tout apprenant déterministe a un regret $\ge T/2$. Puis les deux échappatoires : randomiser, ou supposer une structure sur la suite.</div></div></div>
+<div class="vids"><div class="vids-title">▶ Vidéos<span>en anglais · s'ouvrent sur YouTube</span></div><div class="vids-grid"><a class="vid" href="https://www.youtube.com/watch?v=IWzErYm8Lyk" target="_blank" rel="noopener"><span class="vid-thumb">▶<img src="https://i.ytimg.com/vi/IWzErYm8Lyk/mqdefault.jpg" loading="lazy" alt="" onerror="this.remove()"></span><span class="vid-body"><span class="vid-ch">Tim Roughgarden</span><span class="vid-t" style="display:block">A Second Course in Algorithms (Lecture 11: Online Learning and the Multiplicative Weights Algorithm)</span><span class="vid-why" style="display:block">Le regret, pourquoi un algorithme déterministe échoue, puis l'algorithme des poids multiplicatifs et sa preuve.</span></span></a></div></div>
+
+<div class="box thm"><div class="box-title">Lemme (slide 11)</div>
+En classification binaire, pour <b>tout</b> apprenant déterministe, il existe un $\mathcal H$ et une suite d'exemples étiquetés tels que
+$$\mathrm{Reg}_T\ge\frac T2.$$
+Un apprenant déterministe ne peut pas garantir un regret sous-linéaire sans hypothèse sur les données.
+</div>
+<details class="proof" open><summary>Preuve — détaillée (slide 12)</summary>
+<div class="proof-body">
+<div class="step"><b>① Le cadre.</b> Étiquettes $y_t\in\{-1,+1\}$, perte 0-1 $\ell(y_t,\hat y_t) = \mathbb 1(\hat y_t\ne y_t)$, apprenant <b>déterministe</b> : sa prédiction est une fonction fixée de ce qu'il a vu,
+$$\hat y_t = A\big(x_1,y_1,\dots,x_{t-1},y_{t-1},x_t\big).$$</div>
+<div class="step"><b>② L'adversaire.</b> Il connaît $A$ (l'algorithme est public). Au tour $t$, il choisit n'importe quel $x_t$, <b>calcule</b> $\hat y_t = A(\text{passé},x_t)$ — il connaît le passé et $A$ est déterministe — et choisit $y_t := -\hat y_t$.
+<div class="why">C'est bien un adversaire non anticipant : il n'utilise que le passé et la connaissance de l'algorithme. Pour un apprenant déterministe, « connaître le passé » suffit pour connaître la prédiction courante : il n'y a rien de caché.</div></div>
+<div class="step"><b>③ La perte de l'apprenant.</b> À chaque tour $\hat y_t\ne y_t$, donc $\ell(y_t,\hat y_t) = 1$ et $\sum_{t=1}^T\ell(y_t,\hat y_t) = T$.</div>
+<div class="step"><b>④ Il faut aussi regarder le meilleur expert.</b> Une perte de $T$ ne suffit pas : si les experts se trompaient aussi à chaque tour, le regret serait nul. On choisit $\mathcal H := \{h_{-1},h_{+1}\}$, où $h_y$ prédit toujours $y$. À chaque tour, <b>exactement un</b> des deux a raison (celui qui prédit $y_t$), donc
+$$\ell\big(y_t,h_{-1}(x_t)\big)+\ell\big(y_t,h_{+1}(x_t)\big) = 1\quad\Longrightarrow\quad\sum_{t=1}^T\ell\big(y_t,h_{-1}(x_t)\big)+\sum_{t=1}^T\ell\big(y_t,h_{+1}(x_t)\big) = T.$$</div>
+<div class="step"><b>⑤ Le meilleur des deux a au plus $T/2$ erreurs.</b> Deux nombres de somme $T$ ne peuvent pas être tous les deux $>T/2$ (leur somme dépasserait $T$). Donc $L(h_{-1})\le\frac T2$ ou $L(h_{+1})\le\frac T2$, c'est-à-dire $\min_{h\in\mathcal H}\sum_t\ell(y_t,h(x_t))\le\frac T2$.</div>
+<div class="step"><b>⑥ Conclusion.</b>
+$$\mathrm{Reg}_T = \underbrace{\sum_{t=1}^T\ell(y_t,\hat y_t)}_{=\ T}-\underbrace{\min_{h\in\mathcal H}\sum_{t=1}^T\ell\big(y_t,h(x_t)\big)}_{\le\ T/2}\ \ge\ T-\frac T2 = \frac T2.$$</div>
+<div class="qed">∎</div>
+</div></details>
+<div class="box q"><div class="box-title">Intuitivement, pourquoi ? (slide 11)</div>
+<details class="proof"><summary>Réponse</summary><div class="proof-body"><p>Un algorithme déterministe est <b>prévisible</b> : quiconque connaît le code et le passé sait ce qu'il va dire. Un adversaire n'a qu'à dire le contraire. Les experts, eux, ne sont pas visés : l'un d'eux est d'accord avec l'adversaire au moins une fois sur deux. L'apprenant perd à tous les coups pendant qu'un expert fixe ne perd qu'une fois sur deux : l'écart grandit comme $T/2$.</p></div></details></div>
+<p>Dans la scène, essaie les apprenants déterministes : quelle que soit leur règle, la courbe jaune est la diagonale (perte $T$), et le regret dépasse $T/2$. Passe ensuite à l'exponential weighting contre un adversaire <b>non anticipant</b>.</p>
+<div data-scene="ol-adversary"></div>
+
+<div class="box def"><div class="box-title">Deux façons d'échapper à la borne (slide 13)</div>
+<ol>
+<li><b>Un apprenant randomisé, sans hypothèse sur la suite</b> → exponential weighting (§5–6).</li>
+<li><b>Un apprenant déterministe, avec une hypothèse de structure</b> sur la suite → par exemple le perceptron sous séparabilité.</li>
+</ol>
+<b>Pourquoi randomiser ?</b> Pour un apprenant déterministe, $\hat y_t$ est déterminé par l'historique et l'algorithme ; un adversaire adaptatif peut donc le déduire et choisir $y_t\ne\hat y_t$.<br>
+<b>Pourquoi « non anticipant » ?</b> L'adversaire peut dépendre du passé et connaître $p_t$, mais doit choisir $y_t$ <b>avant</b> d'observer la prédiction. S'il la voyait d'abord, la randomisation ne servirait à rien.
+</div>
+<details class="proof"><summary>Ce que la randomisation change, en une ligne de calcul <span class="hint">hors slides</span></summary>
+<div class="proof-body">
+<div class="step"><b>① Contre un adversaire non anticipant.</b> Au tour $t$, $y_t$ est fixé (en fonction du passé), puis l'apprenant tire $\hat y_t$ selon une loi $q_t$. La perte espérée de ce tour vaut $\Pr(\hat y_t\ne y_t) = 1-q_t(y_t)$. Le pire que puisse faire l'adversaire est de choisir l'étiquette la moins probable : perte espérée $\max_yq_t(y)$, qui vaut $\frac12$ si $q_t$ est équilibrée. Il ne peut plus forcer une perte de 1 à chaque tour.</div>
+<div class="step"><b>② Mais randomiser ne suffit pas.</b> Pile ou face à chaque tour donne une perte espérée $T/2$ ; si l'adversaire joue toujours $-1$, l'expert $h_{-1}$ ne se trompe jamais, et le regret vaut $T/2$. Il faut randomiser <b>et</b> apprendre : déplacer la masse de $q_t$ vers les experts qui réussissent. C'est exactement l'exponential weighting.</div>
+<div class="step"><b>③ Contre un adversaire anticipant.</b> Il voit $\hat y_t$ puis choisit $y_t = -\hat y_t$ : la preuve du lemme s'applique mot pour mot, même à un apprenant randomisé.</div>
+</div></details>
+<div class="box intu"><div class="box-title">L'autre échappatoire : le perceptron <span class="hint">hors slides</span></div>
+Si l'on <b>suppose</b> que la suite est séparable par un hyperplan avec une marge $\gamma>0$ (chapitre 3) et que $\|\bx_t\|\le R$, le perceptron (déterministe) fait au plus $(R/\gamma)^2$ erreurs, <b>quel que soit $T$</b> (théorème de Novikoff). L'adversaire ne peut plus jouer n'importe quelle étiquette : il doit rester cohérent avec un séparateur à marge. La garantie vient de l'hypothèse, pas du hasard.
+</div>
+
+<!-- ===================================================================== -->
+<h2 id="wm"><span class="num">4</span>Weighted Majority</h2>
+<div class="sources"><a class="src slides" href="../Slides/7-online-learning.pdf#page=15" target="_blank">Slides p.15–17</a></div>
+<div class="box road"><div class="box-title">Où on en est</div><div class="road-row"><span class="rk ok">Acquis</span><div>La mesure (regret), et l'obstacle : un apprenant déterministe est battu ; il faudra randomiser.</div></div><div class="road-row"><span class="rk q">Il manque</span><div>Un mécanisme pour <b>apprendre à qui faire confiance</b> quand la qualité des experts change au cours du temps.</div></div><div class="road-row"><span class="rk go">Cette partie</span><div>Weighted Majority : des poids, un vote pondéré, une pénalité multiplicative $\beta$. Sa garantie (hors slides) et ses deux défauts, qui motivent le §5.</div></div></div>
+
+<div class="box def"><div class="box-title">Pourquoi pondérer des experts ? (slide 15)</div>
+C'est une méthode générale pour apprendre avec des conseils d'experts, par exemple $\{$wunderground.com, bbc.com, weather.com, cnn.com$\}$. On pourrait choisir le meilleur expert et répéter sa prédiction, mais la qualité des experts <b>change</b> au cours du temps : on préfère garder une confiance graduée en chacun.
+</div>
+<div class="box thm"><div class="box-title">Algorithme 1 — Weighted Majority (slide 16)</div>
+Classification binaire, $\mathcal Y = \{0,1\}$, $\beta\in(0,1)$.
+<ol>
+<li>$w_1\leftarrow(1,\dots,1)$</li>
+<li>pour $t = 1,\dots,T$ :
+<ol>
+<li>observer $x_t$ ;</li>
+<li>prédire $\hat y_t\leftarrow\mathbb 1\Big(\sum_{i:\,h_i(x_t) = 1}w_t(i)\ \ge\sum_{i:\,h_i(x_t) = 0}w_t(i)\Big)$ ;</li>
+<li>observer $y_t$ ;</li>
+<li>si $\hat y_t\ne y_t$ : $w_{t+1}(i)\leftarrow\beta\,w_t(i)$ si $h_i(x_t)\ne y_t$, et $w_{t+1}(i)\leftarrow w_t(i)$ si $h_i(x_t) = y_t$ ;</li>
+<li>sinon : $w_{t+1}\leftarrow w_t$.</li>
+</ol></li>
+</ol>
+L'apprenant prédit le vote majoritaire pondéré des experts. Les experts qui ont contribué à une mauvaise prédiction sont pénalisés par $\beta$ (slide 17).
+</div>
+<details class="objs" open><summary>Les objets en jeu</summary><dl>
+<dt>$w_t(i)$</dt><dd><span class="ty">confiance</span>Après $m$ pénalités, $w_t(i) = \beta^m$ : chaque erreur sanctionnée divise la confiance par $1/\beta$ (par 2 si $\beta = \frac12$).</dd>
+<dt>vote pondéré</dt><dd><span class="ty">décision déterministe</span>On compare le poids total des experts qui disent 1 à celui des experts qui disent 0 ; égalité → 1.</dd>
+<dt>$\beta$</dt><dd><span class="ty">sévérité</span>Proche de 0 : on élimine presque un expert dès sa première faute. Proche de 1 : on pardonne beaucoup, on s'adapte lentement.</dd>
+</dl></details>
+<div data-scene="ol-wm"></div>
+<details class="proof"><summary>Preuve — le nombre d'erreurs de Weighted Majority est contrôlé par celui du meilleur expert <span class="hint">hors slides</span></summary>
+<div class="proof-body">
+<p>Notons $M$ le nombre d'erreurs de WM sur les $T$ tours, $m^\star$ celui du meilleur expert $i^\star$, et $W_t = \sum_iw_t(i)$ le poids total. On montre
+$$M\le\frac{\ln K+m^\star\ln(1/\beta)}{\ln\big(2/(1+\beta)\big)}.$$</p>
+<div class="step"><b>① Au départ.</b> $W_1 = K$ (tous les poids valent 1).</div>
+<div class="step"><b>② Un tour où WM a raison.</b> Les poids ne changent pas : $W_{t+1} = W_t$.</div>
+<div class="step"><b>③ Un tour où WM se trompe.</b> WM a prédit l'étiquette qui avait au moins la moitié du poids. Comme $\hat y_t\ne y_t$, tous les experts qui ont prédit $\hat y_t$ se sont trompés : leur poids total $W^{\text{faux}}$ vérifie $W^{\text{faux}}\ge\frac12W_t$. Après la mise à jour :
+$$W_{t+1} = \underbrace{(W_t-W^{\text{faux}})}_{\text{poids inchangés}}+\beta W^{\text{faux}} = W_t-(1-\beta)W^{\text{faux}}\le W_t-(1-\beta)\frac{W_t}2 = \frac{1+\beta}2\,W_t.$$
+<div class="why">C'est le cœur de l'argument : <b>chaque erreur de l'apprenant fait fondre le poids total</b> d'au moins un facteur $\frac{1+\beta}2<1$, parce qu'une erreur du vote implique qu'une majorité (en poids) s'est trompée.</div></div>
+<div class="step"><b>④ Après $M$ erreurs.</b> En enchaînant ② et ③ : $W_{T+1}\le K\Big(\frac{1+\beta}2\Big)^M$.</div>
+<div class="step"><b>⑤ Le poids du meilleur expert résiste.</b> $w(i^\star)$ n'est multiplié par $\beta$ que lors des tours où WM se trompe <b>et</b> $i^\star$ se trompe, donc au plus $m^\star$ fois : $w_{T+1}(i^\star)\ge\beta^{m^\star}$.</div>
+<div class="step"><b>⑥ Comparer.</b> Un poids est inférieur au total : $\beta^{m^\star}\le w_{T+1}(i^\star)\le W_{T+1}\le K\big(\frac{1+\beta}2\big)^M$. On prend le logarithme (croissant) :
+$$m^\star\ln\beta\le\ln K+M\ln\frac{1+\beta}2.$$
+Comme $\ln\frac{1+\beta}2 = -\ln\frac2{1+\beta}<0$ et $\ln\beta = -\ln\frac1\beta$, on réarrange : $M\ln\frac2{1+\beta}\le\ln K+m^\star\ln\frac1\beta$, puis on divise par $\ln\frac2{1+\beta}>0$.</div>
+<div class="step"><b>⑦ Exemple $\beta = \frac12$.</b> $M\le\frac{\ln K+m^\star\ln2}{\ln(4/3)}\approx2.41\,m^\star+3.48\ln K$. Le facteur devant $m^\star$ est supérieur à 2, et ce n'est pas un défaut de la preuve : contre l'adversaire du §3, $M = T$ alors que $m^\star\le T/2$, donc aucune borne de la forme $M\le c\,m^\star+\dots$ avec $c<2$ n'est possible pour un algorithme déterministe.</div>
+<div class="qed">∎</div>
+</div></details>
+<div class="box warn"><div class="box-title">Les deux défauts de Weighted Majority (slide 17)</div>
+<ul>
+<li><b>✗ L'algorithme est déterministe.</b> Le lemme du §3 s'applique : un adversaire fait se tromper WM à chaque tour, et avec $\mathcal H = \{h_{-1},h_{+1}\}$ le regret vaut au moins $T/2$. Coche « adversaire » dans la scène.</li>
+<li><b>✗ L'algorithme est limité à la classification</b> : le vote majoritaire et la pénalité « s'est trompé / a eu raison » supposent des étiquettes discrètes et une perte 0-1.</li>
+</ul></div>
+<div class="box q"><div class="box-title">Qu'est-ce qui ne va pas avec un algorithme déterministe ? (slide 17)</div>
+<details class="proof"><summary>Réponse</summary><div class="proof-body"><p>Il est prévisible. Connaissant les poids (calculables à partir du passé), l'adversaire connaît le vote et joue l'inverse : $M_T = T$. La borne ci-dessus reste vraie, mais elle devient inutile, car le meilleur expert a alors au moins $\approx T/2.4$ erreurs. Le regret, lui, est $\ge T/2$ : linéaire.</p></div></details></div>
+
+<!-- ===================================================================== -->
+<h2 id="ew"><span class="num">5</span>Randomiser : de Weighted Majority à l'exponential weighting</h2>
+<div class="sources"><a class="src slides" href="../Slides/7-online-learning.pdf#page=18" target="_blank">Slides p.18–21</a></div>
+<div class="box road"><div class="box-title">Où on en est</div><div class="road-row"><span class="rk ok">Acquis</span><div>Des poids multiplicatifs suivent bien la qualité des experts (§4), mais le vote déterministe est battu (§3).</div></div><div class="road-row"><span class="rk q">Il manque</span><div>Rendre la prédiction imprévisible, et sortir de la classification.</div></div><div class="road-row"><span class="rk go">Cette partie</span><div>Randomized Weighted Majority (tirer un expert au lieu de voter), la réécriture $(1-\eta)^{\ell}$, puis $e^{-\eta\ell}$ : l'algorithme <b>exponential weighting</b>, et sa forme « softmax des pertes cumulées ».</div></div></div>
+<div class="vids"><div class="vids-title">▶ Vidéos<span>en anglais · s'ouvrent sur YouTube</span></div><div class="vids-grid"><a class="vid" href="https://www.youtube.com/watch?v=0AC1WmRX1_s" target="_blank" rel="noopener"><span class="vid-thumb">▶<img src="https://i.ytimg.com/vi/0AC1WmRX1_s/mqdefault.jpg" loading="lazy" alt="" onerror="this.remove()"></span><span class="vid-body"><span class="vid-ch">Wandida, EPFL · Lê Nguyên Hoang</span><span class="vid-t" style="display:block">The Multiplicative Weights Update Algorithm</span><span class="vid-why" style="display:block">L'algorithme des poids multiplicatifs, présenté pas à pas.</span></span></a><a class="vid" href="https://www.youtube.com/watch?v=farwgaEMJeA" target="_blank" rel="noopener"><span class="vid-thumb">▶<img src="https://i.ytimg.com/vi/farwgaEMJeA/mqdefault.jpg" loading="lazy" alt="" onerror="this.remove()"></span><span class="vid-body"><span class="vid-ch">Thatchaphol Saranurak</span><span class="vid-t" style="display:block">Lecture 12.2 Choosing experts via Multiplicative Weights Update</span><span class="vid-why" style="display:block">Regret avec 2 actions puis $K$ experts, et la preuve du MWU.</span></span></a></div></div>
+
+<div class="box thm"><div class="box-title">Algorithme 2 — Randomized Weighted Majority (slide 18)</div>
+Classification, $\beta\in(0,1)$.
+<ol>
+<li>$w_1\leftarrow(1,\dots,1)$</li>
+<li>pour $t = 1,\dots,T$ :
+<ol>
+<li>observer $x_t$ ;</li>
+<li>poser $p_t(i) := w_t(i)/\sum_jw_t(j)$ pour tout $i$ ;</li>
+<li><b>tirer</b> $i\sim p_t$ et prédire $\hat y_t\leftarrow h_i(x_t)$ ;</li>
+<li>observer $y_t$ ;</li>
+<li>$w_{t+1}(i)\leftarrow\beta\,w_t(i)$ si $h_i(x_t)\ne y_t$, et $w_{t+1}(i)\leftarrow w_t(i)$ si $h_i(x_t) = y_t$.</li>
+</ol></li>
+</ol>
+✓ L'algorithme est maintenant randomisé. <span class="c-dim">Deux différences avec WM : on <b>tire</b> au lieu de voter, et on pénalise les experts fautifs à <b>chaque</b> tour, pas seulement quand l'apprenant se trompe.</span>
+</div>
+
+<div class="box def"><div class="box-title">Réécrire la mise à jour pour toute perte bornée (slide 19)</div>
+Avec $\beta := 1-\eta$ et $\ell(y_t,h_i(x_t)) := \mathbb 1(h_i(x_t)\ne y_t)$, la mise à jour de RWM s'écrit
+$$w_{t+1}(i)\leftarrow w_t(i)\,(1-\eta)^{\ell(y_t,h_i(x_t))}.$$
+Cette écriture a un sens pour <b>n'importe quelle</b> perte bornée, pas seulement 0-1. De plus, pour $\eta$ petit,
+$$(1-\eta)^{\ell}\approx\exp(-\eta\,\ell).$$
+L'exponentielle n'est qu'une approximation de la mise à jour « linéaire », mais elle a de meilleures propriétés mathématiques (interprétation probabiliste, preuves de regret plus simples).
+</div>
+<details class="proof"><summary>Preuve — $(1-\eta)^{\ell}$ et $e^{-\eta\ell}$ : l'encadrement précis <span class="hint">hors slides</span></summary>
+<div class="proof-body">
+<div class="step"><b>① Pour $\ell\in\{0,1\}$, c'est bien RWM.</b> $\ell = 0$ (l'expert a raison) : $(1-\eta)^0 = 1$, le poids ne change pas. $\ell = 1$ : $(1-\eta)^1 = \beta$. Exactement la ligne 5 de l'algorithme 2.</div>
+<div class="step"><b>② Majorant : $\ln(1-\eta)\le-\eta$ pour $\eta\in[0,1)$.</b> La fonction $u\mapsto\ln(1+u)$ est concave, donc sous sa tangente en 0, qui est $u\mapsto u$. Avec $u = -\eta$ : $\ln(1-\eta)\le-\eta$, donc $1-\eta\le e^{-\eta}$.</div>
+<div class="step"><b>③ Minorant : $\ln(1-\eta)\ge-\eta-\eta^2$ pour $\eta\in[0,\frac12]$.</b> Posons $g(\eta) = \ln(1-\eta)+\eta+\eta^2$. Alors $g(0) = 0$ et
+$$g'(\eta) = -\frac1{1-\eta}+1+2\eta = \frac{-1+(1+2\eta)(1-\eta)}{1-\eta} = \frac{\eta-2\eta^2}{1-\eta} = \frac{\eta(1-2\eta)}{1-\eta}\ge0\quad\text{sur }[0,\tfrac12].$$
+$g$ est croissante et part de 0, donc $g\ge0$ sur $[0,\frac12]$.</div>
+<div class="step"><b>④ L'encadrement.</b> En multipliant par $\ell\ge0$ et en prenant l'exponentielle : $e^{-(\eta+\eta^2)\ell}\le(1-\eta)^{\ell}\le e^{-\eta\ell}$. Les deux mises à jour coïncident à l'ordre 1 en $\eta$ ; elles diffèrent d'un facteur $e^{-\eta^2\ell}$ au plus, négligeable quand $\eta$ est petit (et l'analyse du §6 choisit $\eta\approx\sqrt{8\ln K/T}$, petit).</div>
+<div class="qed">∎</div>
+</div></details>
+<p>La scène reproduit la figure de la slide 20 : le poids d'un expert en fonction de sa perte cumulée $c$, pour les deux mises à jour.</p>
+<div data-scene="ol-decay"></div>
+
+<div class="box thm"><div class="box-title">Algorithme 3 — Exponential Weighting (slide 21)</div>
+$\mathcal H := \{h_1,\dots,h_{|\mathcal H|}\}$ un ensemble d'experts, perte $\ell(\cdot)\in[0,1]$.
+<ol>
+<li>$w_1\leftarrow(1,\dots,1)$</li>
+<li>pour $t = 1,\dots,T$ :
+<ol>
+<li>observer $x_t$ ;</li>
+<li>poser $p_t(i) := w_t(i)/\sum_jw_t(j)$ pour tout $i$ ;</li>
+<li>tirer $i\sim p_t$ et prédire $\hat y_t\leftarrow h_i(x_t)$ ;</li>
+<li>observer $y_t$ ;</li>
+<li>$w_{t+1}(i)\leftarrow w_t(i)\exp\{-\eta\cdot\ell(y_t,h_i(x_t))\}$ pour tout $i\in\{1,\dots,|\mathcal H|\}$.</li>
+</ol></li>
+</ol>
+À cause du tirage (ligne 3), un adversaire ne peut pas complètement tromper l'apprenant. L'algorithme s'applique à des tâches variées, classification comme régression.
+</div>
+<details class="objs" open><summary>Les objets en jeu</summary><dl>
+<dt>$w_t(i)$</dt><dd><span class="ty">poids non normalisé</span>Ne dépend que de la perte cumulée de l'expert $i$ (voir la preuve ci-dessous).</dd>
+<dt>$p_t$</dt><dd><span class="ty">loi sur les experts</span>Calculée <b>avant</b> de voir $y_t$ ; c'est tout ce qu'un adversaire non anticipant peut connaître de la prochaine prédiction.</dd>
+<dt>$I_t\sim p_t$</dt><dd><span class="ty">tirage interne</span>La seule source de hasard. Le regret de la slide 22 est une espérance sur ces tirages.</dd>
+<dt>$\eta$</dt><dd><span class="ty">sensibilité</span>Combien une unité de perte coûte en confiance : $e^{-\eta}$ par unité.</dd>
+</dl></details>
+<details class="proof"><summary>Preuve — $p_t$ est une softmax des pertes cumulées, de température $1/\eta$ <span class="hint">hors slides</span></summary>
+<div class="proof-body">
+<div class="step"><b>① Poids en forme close.</b> Partant de $w_1(i) = 1$ et multipliant à chaque tour : $w_{t+1}(i) = \prod_{s=1}^te^{-\eta\ell_s(i)} = \exp\big(-\eta\sum_{s=1}^t\ell_s(i)\big) = e^{-\eta L_{t,i}}$, en notant $L_{t,i} = \sum_{s\le t}\ell_s(i)$ (et $L_{0,i} = 0$). L'ordre des pertes n'a aucune importance : seule compte leur somme.</div>
+<div class="step"><b>② La distribution.</b> $p_t(i) = \dfrac{e^{-\eta L_{t-1,i}}}{\sum_je^{-\eta L_{t-1,j}}} = \mathrm{softmax}\big(-\eta\,L_{t-1}\big)_i$ : la softmax du chapitre 5 appliquée aux « logits » $-\eta L_{t-1,i}$, c'est-à-dire de température $T_{\text{soft}} = 1/\eta$.</div>
+<div class="step"><b>③ Les deux extrêmes.</b> $\eta\to0$ : tous les logits tendent vers 0, $p_t$ tend vers la loi <b>uniforme</b> (on n'apprend rien). $\eta\to\infty$ : toute la masse va sur l'expert de plus petite perte cumulée, c'est <b>« suivre le meneur »</b> (follow the leader), déterministe, donc battu par l'adversaire. L'exponential weighting interpole entre les deux ; le §6 dit où se placer.</div>
+<div class="step"><b>④ Rapport de deux experts.</b> $\frac{p_t(i)}{p_t(j)} = e^{-\eta(L_{t-1,i}-L_{t-1,j})}$ : chaque unité de perte d'écart multiplie la préférence par $e^{\eta}$.</div>
+<div class="qed">∎</div>
+</div></details>
+<p>La scène montre la distribution $p_t$ au fil des tours (aires empilées) et le regret espéré, avec la borne du §6. Compare les environnements : stationnaire, changement à mi-parcours, et un adversaire adaptatif : les pertes sont tirées au hasard (l'expert 1 est le meilleur), mais dès qu'un expert porte plus de la moitié du poids, l'adversaire lui inflige une perte 1. Il punit donc à la fois la lenteur (petit $\eta$) et la concentration (grand $\eta$).</p>
+<div data-scene="ol-ew"></div>
+<div class="box intu"><div class="box-title">Pourquoi les poids basculent tard après un changement <span class="hint">hors slides</span></div>
+Avec « changement à mi-parcours », le nouvel expert ne prend la tête qu'une fois son retard en perte <b>cumulée</b> rattrapé, souvent bien après le changement : $p_t$ ne dépend que de $L_{t-1}$, pas des performances récentes. Ce n'est pas un défaut vis-à-vis du théorème, qui compare à un expert <b>fixe</b> (regret statique). Pour suivre un meilleur expert qui change, on utilise des variantes qui « oublient » (par exemple <em>fixed share</em> : remélanger un peu de poids uniforme à chaque tour), analysées avec le regret dynamique à nombre de changements limité (slide 10).
+</div>
+
+<!-- ===================================================================== -->
+<h2 id="theorem"><span class="num">6</span>La garantie : $\E[\mathrm{Reg}_T]\le\sqrt{T\ln|\mathcal H|}$</h2>
+<div class="sources"><a class="src slides" href="../Slides/7-online-learning.pdf#page=22" target="_blank">Slide p.22</a></div>
+<div class="box road"><div class="box-title">Où on en est</div><div class="road-row"><span class="rk ok">Acquis</span><div>L'algorithme : tirer $I_t\sim p_t$ avec $p_t\propto e^{-\eta L_{t-1}}$.</div></div><div class="road-row"><span class="rk q">Il manque</span><div>Une preuve que son regret est sous-linéaire contre <b>tout</b> adversaire non anticipant, et le choix de $\eta$.</div></div><div class="road-row"><span class="rk go">Cette partie</span><div>Le théorème de la slide 22, sa preuve complète par le potentiel $W_t$ et le lemme de Hoeffding (prouvé aussi), puis le choix $\eta^\star = \sqrt{8\ln K/T}$.</div></div></div>
+<div class="vids"><div class="vids-title">▶ Vidéos<span>en anglais · s'ouvrent sur YouTube</span></div><div class="vids-grid"><a class="vid" href="https://www.youtube.com/watch?v=ssAEgJKRe9o" target="_blank" rel="noopener"><span class="vid-thumb">▶<img src="https://i.ytimg.com/vi/ssAEgJKRe9o/mqdefault.jpg" loading="lazy" alt="" onerror="this.remove()"></span><span class="vid-body"><span class="vid-ch">Tim Roughgarden</span><span class="vid-t" style="display:block">Algorithmic Game Theory (Lecture 17: No-Regret Dynamics)</span><span class="vid-why" style="display:block">La preuve du regret $O(\sqrt{T\ln K})$ par le potentiel, très clairement.</span></span></a><a class="vid" href="https://www.youtube.com/watch?v=R9mT5CtdHLg" target="_blank" rel="noopener"><span class="vid-thumb">▶<img src="https://i.ytimg.com/vi/R9mT5CtdHLg/mqdefault.jpg" loading="lazy" alt="" onerror="this.remove()"></span><span class="vid-body"><span class="vid-ch">Harvard University</span><span class="vid-t" style="display:block">Advanced Algorithms (COMPSCI 224), Lecture 19</span><span class="vid-why" style="display:block">Apprendre avec des experts et poids multiplicatifs : une autre présentation des preuves.</span></span></a></div></div>
+
+<div class="box thm"><div class="box-title">Théorème (slide 22)</div>
+Pour tout $\mathcal H$ fini et toute perte $\ell$ à valeurs dans $[0,1]$, dans un environnement adversarial,
+$$\E[\mathrm{Reg}_T] = \E\Big[\sum_{t=1}^T\ell\big(y_t,h_{I_t}(x_t)\big)-\min_{h\in\mathcal H}\sum_{t=1}^T\ell\big(y_t,h(x_t)\big)\Big]\le\sqrt{T\ln|\mathcal H|},$$
+où $I_t\sim p_t$ et $\eta = \sqrt{\frac{8\ln|\mathcal H|}T}$. L'espérance porte sur la randomisation interne de l'apprenant. On en déduit que $\mathcal H$ fini est « apprenable » : $\frac{\E[\mathrm{Reg}_T]}T\le\sqrt{\frac{\ln|\mathcal H|}T}\to0$.
+</div>
+<details class="objs" open><summary>Les objets en jeu dans la preuve</summary><dl>
+<dt>$W_t = \sum_iw_t(i)$</dt><dd><span class="ty">potentiel</span>Une seule quantité qu'on encadre de deux façons : par le bas grâce au meilleur expert, par le haut grâce à la perte de l'apprenant.</dd>
+<dt>$\langle p_t,\ell_t\rangle = \sum_ip_t(i)\ell_t(i)$</dt><dd><span class="ty">perte espérée du tour $t$</span>Ce que l'apprenant perd en moyenne au tour $t$, sachant le passé.</dd>
+<dt>$K = |\mathcal H|$, $L^\star = \min_iL_{T,i}$</dt><dd><span class="ty">entiers, réel</span>Nombre d'experts ; perte du meilleur expert a posteriori.</dd>
+</dl></details>
+<details class="proof" open><summary>Preuve — complète, étape par étape</summary>
+<div class="proof-body">
+<p>On montre d'abord, pour <b>tout</b> $\eta>0$ et <b>toute</b> suite de pertes $\ell_t(i)\in[0,1]$, l'inégalité <b>déterministe</b>
+$$\sum_{t=1}^T\langle p_t,\ell_t\rangle-L^\star\ \le\ \frac{\ln K}\eta+\frac{\eta T}8,\qquad(\star)$$
+puis on en déduit le théorème.</p>
+<div class="step"><b>① Minorer le potentiel final par le meilleur expert.</b> Par la forme close du §5, $w_{T+1}(i) = e^{-\eta L_{T,i}}$. Une somme de termes positifs est plus grande que chacun de ses termes, en particulier que celui du meilleur expert $i^\star$ :
+$$W_{T+1} = \sum_ie^{-\eta L_{T,i}}\ \ge\ e^{-\eta L^\star}.$$
+Avec $W_1 = K$ : $\ \ln\dfrac{W_{T+1}}{W_1}\ \ge\ -\eta L^\star-\ln K.$
+<div class="why">Si un expert est bon, son poids reste gros, donc le total aussi. Le prix de ne pas savoir lequel est bon est seulement $\ln K$ : le poids initial du bon expert est $1$ sur un total de $K$.</div></div>
+<div class="step"><b>② Le rapport d'un tour au suivant est une espérance.</b>
+$$\frac{W_{t+1}}{W_t} = \frac{\sum_iw_t(i)e^{-\eta\ell_t(i)}}{W_t} = \sum_i\underbrace{\frac{w_t(i)}{W_t}}_{=\ p_t(i)}e^{-\eta\ell_t(i)} = \E_{i\sim p_t}\Big[e^{-\eta\ell_t(i)}\Big].$$</div>
+<div class="step"><b>③ Majorer chaque rapport (lemme de Hoeffding).</b> Soit $X = \ell_t(i)$ avec $i\sim p_t$ : c'est une variable aléatoire à valeurs dans $[0,1]$, de moyenne $\E X = \langle p_t,\ell_t\rangle$. Le lemme de Hoeffding (prouvé plus bas), avec $s = -\eta$, donne
+$$\ln\E\big[e^{-\eta X}\big]\le-\eta\,\E X+\frac{\eta^2}8,\qquad\text{donc}\qquad\ln\frac{W_{t+1}}{W_t}\le-\eta\,\langle p_t,\ell_t\rangle+\frac{\eta^2}8.$$
+<div class="why">Lecture : le potentiel diminue d'autant plus que l'apprenant perd en moyenne. Chaque perte de l'apprenant se paie en potentiel, au terme $\eta^2/8$ près.</div></div>
+<div class="step"><b>④ Sommer sur les tours (somme télescopique).</b> $\ln\frac{W_{T+1}}{W_1} = \sum_{t=1}^T\ln\frac{W_{t+1}}{W_t}$ (les termes intermédiaires se simplifient), donc
+$$\ln\frac{W_{T+1}}{W_1}\le-\eta\sum_{t=1}^T\langle p_t,\ell_t\rangle+\frac{\eta^2T}8.$$</div>
+<div class="step"><b>⑤ Combiner ① et ④.</b> La même quantité est encadrée des deux côtés :
+$$-\eta L^\star-\ln K\ \le\ \ln\frac{W_{T+1}}{W_1}\ \le\ -\eta\sum_t\langle p_t,\ell_t\rangle+\frac{\eta^2T}8.$$
+On passe $-\eta\sum_t\langle p_t,\ell_t\rangle$ à gauche et $-\ln K$ à droite : $\eta\big(\sum_t\langle p_t,\ell_t\rangle-L^\star\big)\le\ln K+\frac{\eta^2T}8$. On divise par $\eta>0$ : c'est $(\star)$.</div>
+<div class="step"><b>⑥ Passer à l'espérance du regret.</b> L'adversaire choisit $y_t$ (donc le vecteur $\ell_t$) <b>avant</b> le tirage $I_t$, et $p_t$ ne dépend que du passé. Sachant le passé, $I_t\sim p_t$, donc
+$$\E\big[\ell_t(I_t)\,\big|\,\text{passé}\big] = \sum_ip_t(i)\ell_t(i) = \langle p_t,\ell_t\rangle.$$
+Par la tour des espérances, $\E\big[\sum_t\ell_t(I_t)\big] = \E\big[\sum_t\langle p_t,\ell_t\rangle\big]$, et donc
+$$\E[\mathrm{Reg}_T] = \E\Big[\sum_t\langle p_t,\ell_t\rangle-L^\star\Big]\le\frac{\ln K}\eta+\frac{\eta T}8,$$
+car $(\star)$ est vraie pour <b>chaque</b> réalisation (même si l'adversaire adaptatif rend les $\ell_t$, donc $L^\star$, aléatoires).
+<div class="why">C'est ici que « non anticipant » sert : si $\ell_t$ pouvait dépendre de $I_t$, l'égalité $\E[\ell_t(I_t)\,|\,\text{passé}] = \langle p_t,\ell_t\rangle$ serait fausse.</div></div>
+<div class="step"><b>⑦ Choisir $\eta$.</b> $f(\eta) = \frac a\eta+b\eta$ avec $a = \ln K$, $b = \frac T8$. $f'(\eta) = -\frac a{\eta^2}+b = 0\iff\eta^\star = \sqrt{a/b} = \sqrt{\frac{8\ln K}T}$ ; $f''(\eta) = \frac{2a}{\eta^3}>0$, c'est donc un minimum global sur $(0,\infty)$, de valeur
+$$f(\eta^\star) = \sqrt{ab}+\sqrt{ab} = 2\sqrt{\frac{T\ln K}8} = \sqrt{\frac{T\ln K}2}\ \le\ \sqrt{T\ln K}.$$
+<div class="why">Les deux termes se disputent : $\frac{\ln K}\eta$ est le prix de la <b>lenteur</b> (avec $\eta$ petit, il faut longtemps pour se détacher de l'uniforme), $\frac{\eta T}8$ le prix de l'<b>instabilité</b> (avec $\eta$ grand, on suit le meneur du moment et l'adversaire en profite). À l'optimum, les deux termes sont égaux.</div></div>
+<div class="step"><b>⑧ Regret moyen.</b> $\frac{\E[\mathrm{Reg}_T]}T\le\sqrt{\frac{\ln K}{2T}}\le\sqrt{\frac{\ln K}T}\to0$. La dépendance en $K$ est seulement <b>logarithmique</b> : un million d'experts ne coûte que $\ln10^6\approx14$.</div>
+<div class="qed">∎</div>
+</div></details>
+
+<div class="box thm"><div class="box-title">Lemme de Hoeffding <span class="hint">hors slides</span></div>
+Si $X\in[0,1]$ presque sûrement et $\mu = \E X$, alors pour tout $s\in\R$ :
+$$\ln\E\big[e^{sX}\big]\le s\mu+\frac{s^2}8.$$
+</div>
+<details class="proof"><summary>Preuve du lemme de Hoeffding, étape par étape</summary>
+<div class="proof-body">
+<div class="step"><b>① Se ramener à une Bernoulli (convexité).</b> Pour $x\in[0,1]$, on écrit $x$ comme mélange de 0 et 1 : $x = (1-x)\cdot0+x\cdot1$. L'exponentielle $u\mapsto e^{su}$ est convexe, donc elle est sous sa corde entre 0 et 1 :
+$$e^{sx}\le(1-x)e^{0}+x\,e^{s}.$$
+On prend l'espérance : $\E[e^{sX}]\le1-\mu+\mu e^s$. Il suffit donc de montrer $\psi(s) := \ln(1-\mu+\mu e^s)\le s\mu+\frac{s^2}8$.
+<div class="why">Le pire cas, à moyenne fixée, est la variable qui ne prend que les valeurs extrêmes 0 et 1 (une Bernoulli) : c'est la plus « étalée ».</div></div>
+<div class="step"><b>② Valeur et pente en 0.</b> $\psi(0) = \ln1 = 0$. En dérivant : $\psi'(s) = \dfrac{\mu e^s}{1-\mu+\mu e^s} =: q(s)$, et $\psi'(0) = \mu$.</div>
+<div class="step"><b>③ La courbure est au plus $\frac14$.</b> En dérivant $q$ (quotient) :
+$$q'(s) = \frac{\mu e^s(1-\mu+\mu e^s)-\mu e^s\cdot\mu e^s}{(1-\mu+\mu e^s)^2} = \frac{\mu e^s(1-\mu)}{(1-\mu+\mu e^s)^2} = q(s)\big(1-q(s)\big).$$
+Comme $q(s)\in[0,1]$ et que $u(1-u)\le\frac14$ sur $[0,1]$ (parabole de sommet $u = \frac12$), on a $\psi''(s) = q(1-q)\le\frac14$ pour tout $s$.</div>
+<div class="step"><b>④ Taylor avec reste de Lagrange.</b> Il existe $\xi$ entre 0 et $s$ tel que
+$$\psi(s) = \psi(0)+s\,\psi'(0)+\frac{s^2}2\psi''(\xi)\ \le\ 0+s\mu+\frac{s^2}2\cdot\frac14 = s\mu+\frac{s^2}8.$$</div>
+<div class="step"><b>⑤ Les cas limites.</b> Si $\mu = 0$, alors $X = 0$ presque sûrement et $\ln\E[e^{sX}] = 0\le\frac{s^2}8$. Si $\mu = 1$, alors $X = 1$ et $\ln\E[e^{sX}] = s\le s+\frac{s^2}8$. La preuve vaut aussi pour $s\lt0$ : c'est le cas $s = -\eta$ utilisé au théorème.</div>
+<div class="qed">∎</div>
+</div></details>
+<div data-scene="ol-hoeffding"></div>
+<p>La dernière scène trace le regret mesuré à l'horizon $T$ en fonction de $\eta$, avec la borne $\frac{\ln K}\eta+\frac{\eta T}8$ et ses deux termes : on voit la forme en U et l'optimum $\eta^\star$.</p>
+<div data-scene="ol-eta"></div>
+<div class="box intu"><div class="box-title">Remarques <span class="hint">hors slides</span></div>
+<ul>
+<li><b>Constante.</b> La preuve donne $\sqrt{T\ln K/2}$, mieux que le $\sqrt{T\ln K}$ de la slide ; les deux sont $O(\sqrt{T\ln K})$. On sait aussi qu'aucun algorithme ne fait mieux qu'un ordre $\sqrt{T\ln K}$ dans le pire cas : l'exponential weighting est optimal à constante près.</li>
+<li><b>Horizon inconnu.</b> $\eta^\star$ dépend de $T$. Si $T$ n'est pas connu, on peut relancer l'algorithme sur des périodes de longueur $1,2,4,8,\dots$ avec le $\eta$ adapté à chacune (« doubling trick »), ou prendre $\eta_t\propto\sqrt{\ln K/t}$ : même ordre de regret.</li>
+<li><b>Limite (slide 22).</b> On suppose toujours un ensemble <b>fini</b> d'experts, ce qui peut être une limite en pratique.</li>
+</ul></div>
+
+<!-- ===================================================================== -->
+<h2 id="summary"><span class="num">7</span>Résumé &amp; questions des slides</h2>
+<div class="box thm"><div class="box-title">Tout le chapitre en une chaîne</div>
+$$\underbrace{\text{aucune loi, adversaire non anticipant}}_{\text{§1}}\ \to\ \underbrace{\mathrm{Reg}_T = \sum_t\ell(y_t,\hat y_t)-\min_{h\in\mathcal H}\sum_t\ell(y_t,h(x_t))}_{\text{§2 : objectif }o(T)}\ \to\ \underbrace{\text{déterministe}\Rightarrow\mathrm{Reg}_T\ge\tfrac T2}_{\text{§3}}$$
+$$\to\ \underbrace{I_t\sim p_t,\ \ p_t(i)\propto e^{-\eta L_{t-1,i}}}_{\text{§4–5 : WM → RWM → EW}}\ \to\ \underbrace{\E[\mathrm{Reg}_T]\le\tfrac{\ln K}\eta+\tfrac{\eta T}8 = \sqrt{\tfrac{T\ln K}2}\ \text{avec}\ \eta = \sqrt{\tfrac{8\ln K}T}}_{\text{§6}}$$
+</div>
+<div class="box intu"><div class="box-title">Messages clés (slide 23)</div>
+L'apprentissage en ligne est un nouveau cadre d'apprentissage, où le <b>regret</b> sert de mesure d'évaluation. Ce cadre suppose un environnement adversarial ou stochastique. L'algorithme d'<b>exponential weighting</b> garantit un regret espéré en $O(\sqrt{T\ln|\mathcal H|})$. On a supposé un retour complet (full feedback) : on voit la perte de tous les experts. L'apprentissage par renforcement considérera un retour partiel.
+</div>
+<div class="box q"><div class="box-title">Pourquoi viser $\mathrm{Reg}_T = O(\sqrt T)$ ? (slide 9)</div>
+<details class="proof"><summary>Réponse</summary><div class="proof-body"><p>Parce qu'alors le regret <b>par tour</b> $\mathrm{Reg}_T/T = O(1/\sqrt T)$ tend vers 0 : à la longue, on fait en moyenne aussi bien que le meilleur expert, sans savoir lequel c'est. Et on ne peut pas faire mieux en général : même avec des experts qui se trompent au hasard, le meilleur a posteriori a de l'avance par chance, d'ordre $\sqrt T$ (voir la preuve au §2).</p></div></details></div>
+<div class="box q"><div class="box-title">Pourquoi l'adversaire voit-il les prédictions passées, et pas la courante ? (slide 8)</div>
+<details class="proof"><summary>Réponse</summary><div class="proof-body"><p>Voir la courante, c'est pouvoir dire le contraire à chaque tour : aucune garantie n'est alors possible, même pour un apprenant randomisé. Voir le passé est réaliste (un fraudeur observe nos décisions passées) et laisse une chance à la randomisation : l'adversaire connaît $p_t$, pas $I_t$. Voir la réponse détaillée au §2.</p></div></details></div>
+<div class="box q"><div class="box-title">Pourquoi un apprenant déterministe échoue-t-il, intuitivement ? (slides 11, 17)</div>
+<details class="proof"><summary>Réponse</summary><div class="proof-body"><p>Il est prévisible : l'adversaire calcule sa prédiction et joue l'inverse, alors qu'un des deux experts constants a raison au moins une fois sur deux. Regret $\ge T/2$. Weighted Majority, déterministe, n'y échappe pas.</p></div></details></div>
+<div class="box q"><div class="box-title">Pourquoi passer de $(1-\eta)^{\ell}$ à $e^{-\eta\ell}$ ? (slide 19)</div>
+<details class="proof"><summary>Réponse</summary><div class="proof-body"><p>Les deux sont presque égales pour $\eta$ petit ($e^{-(\eta+\eta^2)\ell}\le(1-\eta)^{\ell}\le e^{-\eta\ell}$ si $\eta\le\frac12$). Mais l'exponentielle donne une forme close $w_{t+1}(i) = e^{-\eta L_{t,i}}$, une interprétation probabiliste ($p_t$ est une softmax des pertes cumulées), et une preuve courte grâce au lemme de Hoeffding, qui porte précisément sur $\E[e^{sX}]$.</p></div></details></div>
+<hr>
+<p class="c-dim" style="font-size:13px">Pour s'entraîner : <a href="exercises.html">exercices à trous</a> (filtre « 6 · en ligne »).</p>
+
+</div></main>
+</div>
+
+<script src="lib/katex/katex.min.js"></script>
+<script src="lib/katex/contrib/auto-render.min.js"></script>
+<script src="lib/three.min.js"></script>
+<script src="js/core/math.js"></script>
+<script src="js/core/plot2d.js"></script>
+<script src="js/core/scene3d.js"></script>
+<script src="js/core/ui.js"></script>
+<script src="js/ol/o0-common.js"></script>
+<script src="js/ol/o1-regret.js"></script>
+<script src="js/ol/o2-weights.js"></script>
+<script>ML.page.boot();</script>
+</body>
+</html>

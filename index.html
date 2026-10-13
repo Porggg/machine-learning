@@ -17,6 +17,7 @@
     <a href="svm.html">3 · SVM</a>
     <a href="model-selection.html">4 · Sélection de modèle</a>
     <a href="neural-networks.html">5 · Réseaux de neurones</a>
+    <a href="online-learning.html">6 · Apprentissage en ligne</a>
     <a href="exercises.html">Entraînement</a>
     <a class="local-only" href="homework.html">Devoirs</a>
   </nav>
@@ -74,12 +75,20 @@
       <p>XOR et unités cachées, ET/OU et régions, fonctions booléennes, approximation universelle, MLP et activations, BCE et softmax, graphe de calcul, rétropropagation vérifiée, entraînement par mini-batchs, espace des features en 3D. <b>11 scènes.</b></p>
     </div>
   </a>
+  <a class="card" href="online-learning.html">
+    <canvas data-thumb="ol"></canvas>
+    <div class="card-body">
+      <div class="meta">Cours 11 · 10/15 · FML 8.2, MLAPP 8.5.1 · HW6</div>
+      <h3>6 · Apprentissage en ligne</h3>
+      <p>Protocole avec experts, regret statique et dynamique, adversaire non anticipant, résultat négatif pour les apprenants déterministes, Weighted Majority, exponential weighting, preuve de $\E[\mathrm{Reg}_T]\le\sqrt{T\ln|\mathcal H|}$ et lemme de Hoeffding. <b>8 scènes.</b></p>
+    </div>
+  </a>
   <a class="card" href="exercises.html">
     <canvas data-thumb="quiz"></canvas>
     <div class="card-body">
       <div class="meta">Définitions · dérivations · calculs</div>
       <h3>Entraînement (textes à trous)</h3>
-      <p>73 exercices type examen (définitions, dérivations à trous, calculs à valeurs aléatoires), réponses libres en LaTeX ou texte, corrigés détaillés.</p>
+      <p>87 exercices type examen (définitions, dérivations à trous, calculs à valeurs aléatoires), réponses libres en LaTeX ou texte, corrigés détaillés.</p>
     </div>
   </a>
   <a class="card local-only" href="homework.html">
@@ -108,7 +117,7 @@
   const M = ML.math, C = M.C;
   ML.renderMath(document.body);
   // ---------- planning ----------
-  const PRML = '../Textbooks/Pattern%20Recognition%20and%20Machine%20Learning.pdf#page=', DL = '../Textbooks/Deep%20Learning%20-%20Foundations%20and%20Concepts.pdf#page=', RL = '../Textbooks/Reinforcement%20Learning-%20An%20Introduction.pdf';
+  const PRML = '../Textbooks/Pattern%20Recognition%20and%20Machine%20Learning.pdf#page=', MLAPP = '../Textbooks/Machine%20Learning%20-%20A%20Probabilistic%20Perspective.pdf#page=', DL = '../Textbooks/Deep%20Learning%20-%20Foundations%20and%20Concepts.pdf#page=', RL = '../Textbooks/Reinforcement%20Learning-%20An%20Introduction.pdf';
   const rows = [
     ['1', '9/8', 'Introduction to ML', 'HW0 : DL ch. 2 Probability', [['DL ch. 2', DL + 43]], 'done'],
     ['2', '9/10', 'Regression — Linear Regression', '', [['PRML 3.1–3.3', PRML + 158]], 'done', 'linear-regression.html'],
@@ -120,8 +129,8 @@
     ['7', '10/1', 'Classification — SVMs', 'HW3', [['PRML 6.1–6.4', PRML + 313]], 'done', 'svm.html'],
     ['8', '10/6', 'Generalization and Model Selection', 'HW4', [['PRML 1.3', PRML + 52]], 'done', 'model-selection.html'],
     ['9', '10/8', 'Classification — NNs', '', [['PRML 5.1–5.3', PRML + 247], ['DL ch. 6, 8', DL + 189]], 'done', 'neural-networks.html'],
-    ['10', '10/13', 'Classification — NNs', 'HW5 : NNs for classification', [['PRML 5.1–5.3', PRML + 247], ['DL ch. 6, 8', DL + 189]], 'todo', 'neural-networks.html'],
-    ['11', '10/15', 'Online Learning — EW', 'HW6', [['FML ch. 8.2', null]], 'todo'],
+    ['10', '10/13', 'Classification — NNs', 'HW5 : NNs for classification', [['PRML 5.1–5.3', PRML + 247], ['DL ch. 6, 8', DL + 189]], 'done', 'neural-networks.html'],
+    ['11', '10/15', 'Online Learning — EW', 'HW6', [['FML ch. 8.2', null], ['MLAPP 8.5.1', MLAPP + 293]], 'todo', 'online-learning.html'],
     ['12', '10/20', 'Exam 1', '', [], 'exam'],
     ['13/14', '10/22', 'Clustering — k-means and EM', 'HW7 / HW8', [['PRML 9.1–9.2', PRML + 444]], 'todo'],
     ['15', '10/27', 'Dimension Reduction — PCA', 'HW9', [['PRML 12.1', PRML + 581]], 'todo'],
@@ -182,6 +191,15 @@
         p.seg(L[l][0], a, L[l + 1][0], b, { color: on ? C.yellow : '#3d4a55', width: on ? 2 : 1.2, alpha: on ? 0.9 : 0.8 });
       }
       L.forEach(([x, ys], l) => ys.forEach(y => p.point(x, y, { color: l === 1 ? C.blue : l === 0 ? C.green : C.red, r: 7, stroke: '#000' })));
+    },
+    ol: (p, t) => {
+      const K = 4, L = [0, 0, 0, 0];
+      // pertes cumulées qui évoluent : le meilleur expert change au cours du temps
+      const ph = (t * 0.5) % 4, best = Math.floor(ph);
+      for (let i = 0; i < K; i++) L[i] = 2.2 * Math.abs(i - ph) + (i === best ? 0 : 0.6);
+      const e = L.map(v => Math.exp(-1.3 * v)), Z = e.reduce((a, b) => a + b, 0), cols = [C.blue, C.gold, C.green, C.purple];
+      e.forEach((v, i) => { const x = -2.4 + i * 1.6, h = 3 * v / Z; p.rect(x - 0.5, -1.5, x + 0.5, -1.5 + h, { color: cols[i], fill: cols[i], fillAlpha: 0.6, width: 1.5 }); });
+      p.tex('ol', -3.3, 1.75, 'p_t(i)\propto e^{-\eta L_{t-1,i}}', { color: '#ddd', anchor: 'left', size: 15 });
     },
     hw: (p, t) => {
       const w = [0.1, 11.8, -33.5, 21.9]; // cubique proche de sin 2πx sur [0,1], remis à l'échelle
