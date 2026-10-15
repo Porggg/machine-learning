@@ -61,7 +61,25 @@
   const fillTex = tex => `\\colorbox{#cfe6c3}{$\\displaystyle ${tex}$}`;
   const prep = (html, map, nums) => html.replace(/\\blank\{(\w+)\}/g, (_, k) => map ? map(k, true) : blankTex(nums[k])).replace(/\[\[(\w+)\]\]/g, (_, k) => map ? map(k, false) : `<span class="blank-box">(${nums[k]})</span>`);
   const numsOf = inst => { const o = {}; Object.keys(inst.blanks).forEach((k, i) => { o[k] = i + 1; }); return o; };
-  const TYPES = { def: ['définition', 'c-blue'], deriv: ['démonstration à trous', 'c-gold'], calc: ['calcul', 'c-green'], hw: ['devoir', 'c-purple'] };
+  // ---------- langue (EN par défaut, comme à l'examen ; FR disponible) ----------
+  EX.EN = {};
+  EX.en = obj => Object.assign(EX.EN, obj);
+  try { EX.lang = localStorage.getItem('ex-lang') || 'en'; } catch (e) { EX.lang = 'en'; }
+  const UI = {
+    fr: { ex: 'Exercice', fill: 'Compléter', check: 'Vérifier', hints: 'Indices', corr: 'Correction', clear: 'Effacer', dice: '🎲 nouvelles valeurs', right: '✓ j\'avais raison',
+      okAll: (o, t) => `<b>${o}/${t}</b> trou(s) correct(s) — bravo, exercice validé !`,
+      okSome: (o, t) => `<b>${o}/${t}</b> trou(s) correct(s). La vérification automatique est tolérante mais pas parfaite : compare avec la correction. Si ta réponse était juste (faute de frappe, autre écriture équivalente), tu peux valider toi-même. `,
+      manual: 'Exercice validé à la main.', done: 'validé', byHand: ' (à la main)', undo: 'cliquer pour annuler la validation', hint: 'indice : ',
+      ph: { num: 'nombre (ex. 0.25, 1/4, ln(2))', word: 'mot ou expression', expr: 'formule (LaTeX ou texte : w^T x, (X^TX)^-1, \\lambda…)' },
+      types: { def: 'définition', deriv: 'démonstration à trous', calc: 'calcul', hw: 'devoir' } },
+    en: { ex: 'Exercise', fill: 'Fill in', check: 'Check', hints: 'Hints', corr: 'Solution', clear: 'Clear', dice: '🎲 new values', right: '✓ I was right',
+      okAll: (o, t) => `<b>${o}/${t}</b> blank(s) correct — well done, exercise completed!`,
+      okSome: (o, t) => `<b>${o}/${t}</b> blank(s) correct. The automatic check is tolerant but not perfect: compare with the solution. If your answer was right (typo, equivalent notation), you can validate it yourself. `,
+      manual: 'Exercise validated by hand.', done: 'done', byHand: ' (by hand)', undo: 'click to undo', hint: 'hint: ',
+      ph: { num: 'number (e.g. 0.25, 1/4, ln(2))', word: 'word or phrase', expr: 'formula (LaTeX or text: w^T x, (X^TX)^-1, \\lambda…)' },
+      types: { def: 'definition', deriv: 'fill-in proof', calc: 'computation', hw: 'homework' } },
+  };
+  const TYPECLS = { def: 'c-blue', deriv: 'c-gold', calc: 'c-green', hw: 'c-purple' };
 
   // ---------- progression (enregistrée dans ce navigateur) ----------
   const KEY = 'ex-progress-v1';
@@ -75,70 +93,92 @@
   function card(ex, num) {
     const h = ML.h;
     const el = h('div', { class: 'ex-card', 'data-ch': ex.ch, 'data-type': ex.type, 'data-id': ex.id });
-    let inst = ex.gen ? ex.gen(ML.math.rng(Math.floor(Math.random() * 1e9))) : ex;
+    let seed = Math.floor(Math.random() * 1e9);
     const head = h('div', { class: 'ex-head' });
     const body = h('div', { class: 'ex-body' }), inputs = h('div', { class: 'ex-inputs' }), fb = h('div', { class: 'ex-feedback' }), sol = h('div', { class: 'ex-solution' });
     const bar = h('div', { class: 'btn-row' });
     el.append(head, body, inputs, bar, fb, sol);
     const state = {};
-    function render() {
-      head.innerHTML = `<span class="ex-title"><b>Exercice <span class="ex-num">${num}</span>.</b> ${ex.title.replace(/^Démo : /, '')}</span><span class="spacer"></span><span class="ex-done"></span><span class="ex-type ${TYPES[ex.type][1]}">${TYPES[ex.type][0]}</span> <span class="src ${ex.srcKind || 'slides'}">${ex.src || ''}</span>`;
-      ML.renderMath(head); paintDone();
-      ML.setMathHTML(body, prep(inst.text, null, numsOf(inst)));
-      inputs.innerHTML = ''; fb.innerHTML = ''; sol.innerHTML = ''; sol.style.display = 'none';
+    let inst, view;
+    // Instance (valeurs + trous, toujours issus de la version française) et vue dans la langue courante.
+    function build() {
+      inst = ex.gen ? ex.gen(ML.math.rng(seed)) : ex;
+      const tr = EX.lang === 'en' ? EX.EN[ex.id] : null, trI = tr && tr.gen ? tr.gen(ML.math.rng(seed)) : tr;
+      const blanks = {};
       for (const k of Object.keys(inst.blanks)) {
-        const b = inst.blanks[k];
+        const b = inst.blanks[k], w = tr && tr.words && tr.words[k];
+        if (b.kind === 'word') {
+          const fr = Array.isArray(b.ans) ? b.ans : [b.ans], en = w ? (Array.isArray(w.ans) ? w.ans : [w.ans]) : [];
+          blanks[k] = Object.assign({}, b, { ans: fr.concat(en), tex: (EX.lang === 'en' && w) ? (w.tex ?? en[0]) : (b.tex ?? fr[0]) });
+        } else blanks[k] = b;
+      }
+      view = { title: (tr && tr.title) || ex.title, text: (trI && trI.text) || inst.text, solution: trI ? trI.solution : inst.solution, blanks };
+    }
+    function render(keep) {
+      const T = UI[EX.lang], old = {};
+      if (keep) for (const k in state) old[k] = state[k].inp.value;
+      build();
+      head.innerHTML = `<span class="ex-title"><b>${T.ex} <span class="ex-num">${num}</span>.</b> ${view.title.replace(/^Démo : /, '')}</span><span class="spacer"></span><span class="ex-done"></span><span class="ex-type ${TYPECLS[ex.type]}">${T.types[ex.type]}</span> <span class="src ${ex.srcKind || 'slides'}">${ex.src || ''}</span>`;
+      ML.renderMath(head); paintDone();
+      const nums = numsOf(view);
+      ML.setMathHTML(body, prep(view.text, null, nums));
+      inputs.innerHTML = ''; fb.innerHTML = ''; sol.innerHTML = ''; sol.style.display = 'none';
+      for (const k of Object.keys(view.blanks)) {
+        const b = view.blanks[k];
         const row = h('div', { class: 'ex-row' });
-        const lab = h('span', { class: 'ex-lab' }); lab.innerHTML = `(${k})&nbsp; Compléter <span class="blank-box">(${numsOf(inst)[k]})</span>`;
-        const inp = h('input', { type: 'text', class: 'ex-in', placeholder: b.kind === 'num' ? 'nombre (ex. 0.25, 1/4, ln(2))' : b.kind === 'word' ? 'mot ou expression' : 'formule (LaTeX ou texte : w^T x, (X^TX)^-1, \\lambda…)', spellcheck: 'false', autocomplete: 'off' });
+        const lab = h('span', { class: 'ex-lab' }); lab.innerHTML = `(${k})&nbsp; ${T.fill} <span class="blank-box">(${nums[k]})</span>`;
+        const inp = h('input', { type: 'text', class: 'ex-in', placeholder: T.ph[b.kind] || T.ph.expr, spellcheck: 'false', autocomplete: 'off' });
         const prev = h('span', { class: 'ex-prev' }), mark = h('span', { class: 'ex-mark' });
         inp.addEventListener('input', () => { if (b.kind === 'expr' && inp.value.trim()) ML.katex(prev, inp.value); else prev.textContent = ''; mark.textContent = ''; row.classList.remove('ok', 'ko'); });
         inp.addEventListener('keydown', e => { if (e.key === 'Enter') verify(); });
         row.append(lab, inp, prev, mark);
-        if (b.hint) { const hi = h('span', { class: 'ex-hint' }); ML.setMathHTML(hi, 'indice : ' + b.hint); hi.style.display = 'none'; row.appendChild(hi); }
+        if (b.hint) { const hi = h('span', { class: 'ex-hint' }); ML.setMathHTML(hi, T.hint + b.hint); hi.style.display = 'none'; row.appendChild(hi); }
         inputs.appendChild(row); state[k] = { inp, row, mark };
+        if (keep && old[k]) { inp.value = old[k]; inp.dispatchEvent(new Event('input')); }
       }
     }
     function verify() {
+      const T = UI[EX.lang];
       let ok = 0, tot = 0;
-      for (const k of Object.keys(inst.blanks)) {
-        const r = EX.check(inst.blanks[k], state[k].inp.value); tot++;
+      for (const k of Object.keys(view.blanks)) {
+        const r = EX.check(view.blanks[k], state[k].inp.value); tot++;
         state[k].row.classList.toggle('ok', r === true); state[k].row.classList.toggle('ko', r === false);
         state[k].mark.textContent = r === true ? '✓' : r === false ? '✗' : '…';
         if (r) ok++;
       }
-      if (ok === tot) {
-        fb.innerHTML = `<b>${ok}/${tot}</b> trou(s) correct(s) — bravo, exercice validé !`;
-        EX.setDone(ex.id, 'auto');
-      } else {
-        fb.innerHTML = `<b>${ok}/${tot}</b> trou(s) correct(s). La vérification automatique est tolérante mais pas parfaite : compare avec la correction. Si ta réponse était juste (faute de frappe, autre écriture équivalente), tu peux valider toi-même. `;
-        const b = h('button', { class: 'btn', type: 'button' }, '✓ j\'avais raison');
-        b.addEventListener('click', () => { EX.setDone(ex.id, 'manual'); fb.innerHTML = 'Exercice validé à la main.'; });
+      if (ok === tot) { fb.innerHTML = T.okAll(ok, tot); EX.setDone(ex.id, 'auto'); }
+      else {
+        fb.innerHTML = T.okSome(ok, tot);
+        const b = h('button', { class: 'btn', type: 'button' }, T.right);
+        b.addEventListener('click', () => { EX.setDone(ex.id, 'manual'); fb.innerHTML = T.manual; });
         fb.appendChild(b);
       }
     }
     function paintDone() {
-      const d = prog[ex.id], badge = head.querySelector('.ex-done');
+      const T = UI[EX.lang], d = prog[ex.id], badge = head.querySelector('.ex-done');
       el.classList.toggle('done', !!d);
       if (!badge) return;
-      badge.innerHTML = d ? `<span title="cliquer pour annuler la validation">✓ validé${d.how === 'manual' ? ' (à la main)' : ''} ✕</span>` : '';
+      badge.innerHTML = d ? `<span title="${T.undo}">✓ ${T.done}${d.how === 'manual' ? T.byHand : ''} ✕</span>` : '';
       badge.onclick = d ? () => EX.setDone(ex.id, null) : null;
     }
     el._paint = paintDone;
+    el._render = () => { render(true); setLabels(); };
     function correction() {
-      const colored = (k, inMath) => { const b = inst.blanks[k], tex = b.tex ?? (b.kind === 'num' ? String(+(+b.ans).toPrecision(6)) : (Array.isArray(b.ans) ? b.ans[0] : b.ans)); return inMath ? (b.kind === 'word' ? fillTex(`\\text{${tex.replace(/\$/g, '')}}`) : fillTex(tex)) : `<span class="blank-fill">${b.kind === 'word' ? tex : '$' + tex + '$'}</span>`; };
+      const T = UI[EX.lang];
+      const colored = (k, inMath) => { const b = view.blanks[k], tex = b.tex ?? (b.kind === 'num' ? String(+(+b.ans).toPrecision(6)) : (Array.isArray(b.ans) ? b.ans[0] : b.ans)); return inMath ? (b.kind === 'word' ? fillTex(`\\text{${String(tex).replace(/\$/g, '')}}`) : fillTex(tex)) : `<span class="blank-fill">${b.kind === 'word' ? tex : '$' + tex + '$'}</span>`; };
       sol.style.display = '';
-      ML.setMathHTML(sol, `<div class="ex-sol-title">Correction</div>${prep(inst.text, colored, numsOf(inst))}${inst.solution ? `<div class="ex-expl">${inst.solution}</div>` : ''}`);
+      ML.setMathHTML(sol, `<div class="ex-sol-title">${T.corr}</div>${prep(view.text, colored, numsOf(view))}${view.solution ? `<div class="ex-expl">${view.solution}</div>` : ''}`);
     }
     const btns = [
-      { label: 'Vérifier', primary: true, onClick: verify },
-      { label: 'Indices', onClick: () => inputs.querySelectorAll('.ex-hint').forEach(e => { e.style.display = e.style.display === 'none' ? '' : 'none'; }) },
-      { label: 'Correction', onClick: () => sol.style.display === 'none' || !sol.innerHTML ? correction() : (sol.style.display = 'none') },
-      { label: 'Effacer', onClick: render },
+      { id: 'check', label: UI.fr.check, primary: true, onClick: verify },
+      { id: 'hints', label: UI.fr.hints, onClick: () => inputs.querySelectorAll('.ex-hint').forEach(e => { e.style.display = e.style.display === 'none' ? '' : 'none'; }) },
+      { id: 'corr', label: UI.fr.corr, onClick: () => sol.style.display === 'none' || !sol.innerHTML ? correction() : (sol.style.display = 'none') },
+      { id: 'clear', label: UI.fr.clear, onClick: () => render(false) },
     ];
-    if (ex.gen) btns.push({ label: '🎲 nouvelles valeurs', onClick: () => { inst = ex.gen(ML.math.rng(Math.floor(Math.random() * 1e9))); render(); } });
-    ML.ui.buttons(bar, btns);
-    render();
+    if (ex.gen) btns.push({ id: 'dice', label: UI.fr.dice, onClick: () => { seed = Math.floor(Math.random() * 1e9); render(false); } });
+    const B = ML.ui.buttons(bar, btns);
+    function setLabels() { const T = UI[EX.lang]; for (const k in B) B[k].innerHTML = T[k]; }
+    render(false); setLabels();
     return el;
   }
 
@@ -169,6 +209,14 @@
     }));
     document.getElementById('ex-shuffle').addEventListener('click', () => { const r = ML.math.rng(Date.now() % 1e9); order = r.shuffle(cards); layout(order); });
     document.getElementById('ex-reset').addEventListener('click', () => { order = cards.slice(); layout(order); });
+    document.querySelectorAll('[data-lang]').forEach(bt => {
+      bt.classList.toggle('on', bt.dataset.lang === EX.lang);
+      bt.addEventListener('click', () => {
+        EX.lang = bt.dataset.lang; try { localStorage.setItem('ex-lang', EX.lang); } catch (e) {}
+        document.querySelectorAll('[data-lang]').forEach(x => x.classList.toggle('on', x === bt));
+        cards.forEach(c => c._render && c._render());
+      });
+    });
     const rst = document.getElementById('ex-progress-reset');
     if (rst) rst.addEventListener('click', () => { if (confirm('Effacer toute ta progression (tous les exercices validés) ?')) EX.resetProgress(); });
     layout(order); progress();
