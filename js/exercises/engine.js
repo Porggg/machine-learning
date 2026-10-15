@@ -56,9 +56,11 @@
   };
 
   // ---------- rendu ----------
-  const blankTex = k => `\\boxed{\\color{#f4d345}{\\,\\textbf{(${k})}\\,}}`;
-  const fillTex = (tex, color) => `\\boxed{\\color{${color}}{${tex}}}`;
-  const prep = (html, map) => html.replace(/\\blank\{(\w+)\}/g, (_, k) => map ? map(k, true) : blankTex(k)).replace(/\[\[(\w+)\]\]/g, (_, k) => map ? map(k, false) : `<span class="blank-lbl">(${k})</span>`);
+  // Trous façon sujet d'examen : cases grises numérotées (1), (2)… ; une même case peut revenir plusieurs fois.
+  const blankTex = n => `\\colorbox{#d4d4d4}{\\hspace{0.7em}\\textsf{(${n})}\\hspace{0.7em}}`;
+  const fillTex = tex => `\\colorbox{#cfe6c3}{$\\displaystyle ${tex}$}`;
+  const prep = (html, map, nums) => html.replace(/\\blank\{(\w+)\}/g, (_, k) => map ? map(k, true) : blankTex(nums[k])).replace(/\[\[(\w+)\]\]/g, (_, k) => map ? map(k, false) : `<span class="blank-box">(${nums[k]})</span>`);
+  const numsOf = inst => { const o = {}; Object.keys(inst.blanks).forEach((k, i) => { o[k] = i + 1; }); return o; };
   const TYPES = { def: ['définition', 'c-blue'], deriv: ['démonstration à trous', 'c-gold'], calc: ['calcul', 'c-green'], hw: ['devoir', 'c-purple'] };
 
   // ---------- progression (enregistrée dans ce navigateur) ----------
@@ -80,14 +82,14 @@
     el.append(head, body, inputs, bar, fb, sol);
     const state = {};
     function render() {
-      head.innerHTML = `<span class="ex-num">${num}</span><span class="ex-title">${ex.title}</span><span class="spacer"></span><span class="ex-done"></span><span class="ex-type ${TYPES[ex.type][1]}">${TYPES[ex.type][0]}</span> <span class="src ${ex.srcKind || 'slides'}">${ex.src || ''}</span>`;
+      head.innerHTML = `<span class="ex-title"><b>Exercice <span class="ex-num">${num}</span>.</b> ${ex.title.replace(/^Démo : /, '')}</span><span class="spacer"></span><span class="ex-done"></span><span class="ex-type ${TYPES[ex.type][1]}">${TYPES[ex.type][0]}</span> <span class="src ${ex.srcKind || 'slides'}">${ex.src || ''}</span>`;
       ML.renderMath(head); paintDone();
-      ML.setMathHTML(body, prep(inst.text));
+      ML.setMathHTML(body, prep(inst.text, null, numsOf(inst)));
       inputs.innerHTML = ''; fb.innerHTML = ''; sol.innerHTML = ''; sol.style.display = 'none';
       for (const k of Object.keys(inst.blanks)) {
         const b = inst.blanks[k];
         const row = h('div', { class: 'ex-row' });
-        const lab = h('span', { class: 'ex-lab' }, `(${k})`);
+        const lab = h('span', { class: 'ex-lab' }); lab.innerHTML = `(${k})&nbsp; Compléter <span class="blank-box">(${numsOf(inst)[k]})</span>`;
         const inp = h('input', { type: 'text', class: 'ex-in', placeholder: b.kind === 'num' ? 'nombre (ex. 0.25, 1/4, ln(2))' : b.kind === 'word' ? 'mot ou expression' : 'formule (LaTeX ou texte : w^T x, (X^TX)^-1, \\lambda…)', spellcheck: 'false', autocomplete: 'off' });
         const prev = h('span', { class: 'ex-prev' }), mark = h('span', { class: 'ex-mark' });
         inp.addEventListener('input', () => { if (b.kind === 'expr' && inp.value.trim()) ML.katex(prev, inp.value); else prev.textContent = ''; mark.textContent = ''; row.classList.remove('ok', 'ko'); });
@@ -124,9 +126,9 @@
     }
     el._paint = paintDone;
     function correction() {
-      const colored = (k, inMath) => { const b = inst.blanks[k], tex = b.tex ?? (b.kind === 'num' ? String(+(+b.ans).toPrecision(6)) : (Array.isArray(b.ans) ? b.ans[0] : b.ans)); return inMath ? fillTex(tex, '#83c167') : `<span class="blank-fill">${b.kind === 'word' ? tex : '$' + tex + '$'}</span>`; };
+      const colored = (k, inMath) => { const b = inst.blanks[k], tex = b.tex ?? (b.kind === 'num' ? String(+(+b.ans).toPrecision(6)) : (Array.isArray(b.ans) ? b.ans[0] : b.ans)); return inMath ? (b.kind === 'word' ? fillTex(`\\text{${tex.replace(/\$/g, '')}}`) : fillTex(tex)) : `<span class="blank-fill">${b.kind === 'word' ? tex : '$' + tex + '$'}</span>`; };
       sol.style.display = '';
-      ML.setMathHTML(sol, `<div class="ex-sol-title">Correction</div>${prep(inst.text, colored)}${inst.solution ? `<div class="ex-expl">${inst.solution}</div>` : ''}`);
+      ML.setMathHTML(sol, `<div class="ex-sol-title">Correction</div>${prep(inst.text, colored, numsOf(inst))}${inst.solution ? `<div class="ex-expl">${inst.solution}</div>` : ''}`);
     }
     const btns = [
       { label: 'Vérifier', primary: true, onClick: verify },
