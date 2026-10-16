@@ -254,5 +254,48 @@ $$\begin{aligned}
 \end{aligned}$$
 <p>(i): the folds were used to [[c]] the candidate, so the minimum is biased downward. (ii): the whole procedure is a deterministic algorithm applied to $S_{\text{dev}}$, and $S_{\text{test}}$ is independent of it. $\square$</p>`,
     words: { c: { ans: ['select', 'choose', 'pick'], tex: 'select' } } },
+  // ------------------------------------------------------------------ HW5
+  h5a: { title: 'Softmax invariance and the stable version',
+    text: R`<p class="hyp"><b>Setup.</b> Logits $\mathbf z\in\R^K$, $\mathrm{softmax}(\mathbf z)_k = \frac{e^{z_k}}{\sum_je^{z_j}}$, computed in double precision ($e^z$ overflows for $z\gtrsim709$, underflows for $z\lesssim-745$).</p>
+<p class="claim"><b>Proposition.</b> $\mathrm{softmax}(\mathbf z+c\mathbf 1_K) = \mathrm{softmax}(\mathbf z)$; with $c = -\max_jz_j$ the computation has neither overflow nor division by 0.</p>
+<p><b>Proof.</b></p>
+$$\begin{aligned}
+\frac{e^{z_k+c}}{\sum_je^{z_j+c}} &= \frac{\blank{a}\,e^{z_k}}{\blank{a}\sum_je^{z_j}} = \mathrm{softmax}(\mathbf z)_k &&\text{(i)}\\
+c = -m,\ m = \max_jz_j:\quad z_j-m\ \blank{b}\ 0\ &\Longrightarrow\ 0\lt e^{z_j-m}\le1 &&\text{(ii)}\\
+\textstyle\sum_je^{z_j-m} &\ge e^{0} = \blank{c}. &&\text{(iii)}
+\end{aligned}$$
+<p>(ii): no overflow. (iii): the term of the maximum equals 1, so the denominator cannot [[d]] to 0. $\square$</p>`,
+    words: { d: { ans: ['underflow', 'vanish'], tex: 'underflow' } } },
+
+  h5b: { title: 'Stable log-softmax and cross-entropy from logits',
+    text: R`<p class="hyp"><b>Data.</b> $Z = \begin{pmatrix}0&-1000&-2000\\1000&0&-1000\end{pmatrix}$, labels $\mathbf y = (1,1)$ (zero-based), $L_{\mathrm{CE}} = -\frac1B\sum_n\mathrm{logsoftmax}(Z)_{n,y_n}$, double precision ($e^{-1000}$ underflows to 0).</p>
+<p class="claim"><b>Proposition.</b> $\mathrm{logsoftmax}(\mathbf z)_k = (z_k-m)-\log\sum_je^{z_j-m}$ with $m = \max_jz_j$ gives a finite loss, unlike $\log(\mathrm{softmax})$.</p>
+<p><b>Proof and computation.</b></p>
+$$\begin{aligned}
+\log\textstyle\sum_je^{z_j} &= m+\log\textstyle\sum_je^{z_j-\blank{a}} &&\text{(i)}\\
+\mathrm{logsoftmax}(Z) &= \begin{pmatrix}0&-1000&-2000\\0&\blank{b}&-2000\end{pmatrix} &&\text{(ii)}\\
+\log\big(\mathrm{softmax}(Z)\big)_{n,1} &= \log 0 = \blank{c} &&\text{(iii)}\\
+L_{\mathrm{CE}}\ \text{(stable log-softmax)} &= \blank{d}. &&\text{(iv)}
+\end{aligned}$$
+<p>(i): factor out $e^m$. (iii): the true probability $e^{-1000}$ suffered an [[e]] to 0 before the $\log$; the loss computed this way is $+\infty$. $\square$</p>`,
+    words: { e: { ans: ['underflow'], tex: 'underflow' } } },
+
+  h5c: { title: 'Shapes in a self-attention block',
+    text: R`<p class="hyp"><b>Data.</b> $X\in\R^{T\times D}$, $Q = XW_Q$, $K = XW_K$, $V = XW_V$, $S = QK^\top/\sqrt{d_k}$, $A = \mathrm{softmax}_{\text{row}}(S)$, $H = AV$, $O = HW_O+X$, $Z = OW_C+\mathbf 1_Tb_C^\top$. $T = 4$, $D = 6$, $d_k = 3$, $d_v = 4$, $C = 5$; $W_Q,W_K\in\R^{6\times3}$, $W_V\in\R^{6\times4}$, $W_O\in\R^{4\times6}$, $W_C\in\R^{6\times5}$.</p>
+<p><b>Computation.</b> Number of columns of each matrix (all have $T = 4$ rows):
+$$Q:\ \blank{a},\qquad V:\ \blank{b},\qquad S, A:\ \blank{c},\qquad O:\ \blank{d},\qquad Z:\ \blank{e}.$$
+The residual sum $HW_O+X$ is only possible because $W_O$ maps dimension $d_v$ back to [[f]].</p>`,
+    words: { f: { ans: ['D', 'D = 6', '6'], tex: '$D$' } } },
+
+  h5d: { title: 'Backpropagating through $H = \\mathrm{softmax}(QK^\\top/\\sqrt{d_k})V$',
+    text: R`<p class="hyp"><b>Setup.</b> $S = QK^\top/\sqrt{d_k}$, $A = \mathrm{softmax}_{\text{row}}(S)$, $H = AV$, and $G_M := \partial L/\partial M$. We know $G_H$ and $\frac{\partial A_{ij}}{\partial S_{ik}} = A_{ij}(\mathbb 1\{j = k\}-A_{ik})$.</p>
+<p class="claim"><b>Proposition.</b> $G_A = G_HV^\top$, $G_V = A^\top G_H$, $G_S = A\odot(G_A-\mathbf r\mathbf 1^\top)$ with $r_i = \sum_jA_{ij}(G_A)_{ij}$, $G_Q = G_SK/\sqrt{d_k}$, $G_K = G_S^\top Q/\sqrt{d_k}$.</p>
+<p><b>Proof.</b></p>
+$$\begin{aligned}
+H_{ij} = \textstyle\sum_kA_{ik}V_{kj}\ &\Longrightarrow\ (G_A)_{ik} = \textstyle\sum_j(G_H)_{ij}\,\blank{a},\qquad G_V = \blank{b} &&\text{(i)}\\
+(G_S)_{ik} &= \textstyle\sum_j(G_A)_{ij}A_{ij}\big(\mathbb 1\{j = k\}-A_{ik}\big) = A_{ik}\big((G_A)_{ik}-\blank{c}\big) &&\text{(ii)}\\
+S_{ij} = \tfrac1{\sqrt{d_k}}\textstyle\sum_mQ_{im}K_{jm}\ &\Longrightarrow\ G_Q = \frac{G_S\,\blank{d}}{\sqrt{d_k}},\qquad G_K = \frac{\blank{e}\,Q}{\sqrt{d_k}}. &&\text{(iii)}
+\end{aligned}$$
+<p>Check: each row of $G_S$ sums to $\blank{f}$, because $\sum_kA_{ik} = 1$. $\square$</p>` },
   });
 })(window.ML);

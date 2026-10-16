@@ -372,5 +372,70 @@ $$\begin{aligned}
       b: { kind: 'expr', ans: [R`E[L(f_{final})]`, R`\E[L(f_{\text{final}})]`, 'E[L(f_final)]', R`\E_{S_{dev}}[L(f_{final})]`], tex: R`\E\big[L(f_{\text{final}})\big]` },
       c: { kind: 'word', ans: ['choisir', 'selectionner', 'sélectionner', 'select'], tex: 'choisir' },
     } }, H),
+  // ------------------------------------------------------------------ HW5
+  Object.assign({ id: 'h5a', ch: 5, title: 'Invariance de la softmax et version stable', src: 'HW5 P2.(1)',
+    text: R`<p class="hyp"><b>Cadre.</b> Logits $\mathbf z\in\R^K$, $\mathrm{softmax}(\mathbf z)_k = \frac{e^{z_k}}{\sum_je^{z_j}}$, calculée en double précision (overflow de $e^z$ pour $z\gtrsim709$, underflow pour $z\lesssim-745$).</p>
+<p class="claim"><b>Proposition.</b> $\mathrm{softmax}(\mathbf z+c\mathbf 1_K) = \mathrm{softmax}(\mathbf z)$ ; avec $c = -\max_jz_j$, le calcul ne fait ni overflow ni division par 0.</p>
+<p><b>Preuve.</b></p>
+$$\begin{aligned}
+\frac{e^{z_k+c}}{\sum_je^{z_j+c}} &= \frac{\blank{a}\,e^{z_k}}{\blank{a}\sum_je^{z_j}} = \mathrm{softmax}(\mathbf z)_k &&\text{(i)}\\
+c = -m,\ m = \max_jz_j:\quad z_j-m\ \blank{b}\ 0\ &\Longrightarrow\ 0\lt e^{z_j-m}\le1 &&\text{(ii)}\\
+\textstyle\sum_je^{z_j-m} &\ge e^{0} = \blank{c}. &&\text{(iii)}
+\end{aligned}$$
+<p>(ii) : pas d'overflow. (iii) : le terme du maximum vaut 1, donc le dénominateur ne peut pas [[d]] vers 0. $\square$</p>`,
+    blanks: {
+      a: { kind: 'expr', ans: ['e^c', R`\exp(c)`, 'exp(c)'], tex: 'e^c' },
+      b: { kind: 'expr', ans: [R`\le`, '<=', '≤', R`\leq`], tex: R`\le` },
+      c: { kind: 'num', ans: 1, tol: 0 },
+      d: { kind: 'word', ans: ['underflow', 'tomber', 'sous-depasser'], tex: 'underflow' },
+    } }, H),
+
+  Object.assign({ id: 'h5b', ch: 5, title: 'Log-softmax stable et cross-entropy depuis les logits', src: 'HW5 P2.(3)–(4)',
+    text: R`<p class="hyp"><b>Données.</b> $Z = \begin{pmatrix}0&-1000&-2000\\1000&0&-1000\end{pmatrix}$, étiquettes $\mathbf y = (1,1)$ (indices commençant à 0), $L_{\mathrm{CE}} = -\frac1B\sum_n\mathrm{logsoftmax}(Z)_{n,y_n}$, double précision ($e^{-1000}$ underflow vers 0).</p>
+<p class="claim"><b>Proposition.</b> $\mathrm{logsoftmax}(\mathbf z)_k = (z_k-m)-\log\sum_je^{z_j-m}$ avec $m = \max_jz_j$ donne une perte finie, contrairement à $\log(\mathrm{softmax})$.</p>
+<p><b>Preuve et calcul.</b></p>
+$$\begin{aligned}
+\log\textstyle\sum_je^{z_j} &= m+\log\textstyle\sum_je^{z_j-\blank{a}} &&\text{(i)}\\
+\mathrm{logsoftmax}(Z) &= \begin{pmatrix}0&-1000&-2000\\0&\blank{b}&-2000\end{pmatrix} &&\text{(ii)}\\
+\log\big(\mathrm{softmax}(Z)\big)_{n,1} &= \log 0 = \blank{c} &&\text{(iii)}\\
+L_{\mathrm{CE}}\ \text{(log-softmax stable)} &= \blank{d}. &&\text{(iv)}
+\end{aligned}$$
+<p>(i) : on factorise $e^m$. (iii) : la vraie probabilité $e^{-1000}$ a fait un [[e]] vers 0 avant le $\log$ ; la perte calculée ainsi vaut $+\infty$. $\square$</p>`,
+    blanks: {
+      a: { kind: 'expr', ans: ['m'], tex: 'm' },
+      b: { kind: 'num', ans: -1000, tol: 0 },
+      c: { kind: 'expr', ans: [R`-\infty`, '-inf', '-infinity', '-∞'], tex: R`-\infty` },
+      d: { kind: 'num', ans: 1000, tol: 0 },
+      e: { kind: 'word', ans: ['underflow', 'soupassement'], tex: 'underflow' },
+    } }, H),
+
+  Object.assign({ id: 'h5c', ch: 5, title: 'Formes dans un bloc de self-attention', src: 'HW5 P3.(1)',
+    text: R`<p class="hyp"><b>Données.</b> $X\in\R^{T\times D}$, $Q = XW_Q$, $K = XW_K$, $V = XW_V$, $S = QK^\top/\sqrt{d_k}$, $A = \mathrm{softmax}_{\text{row}}(S)$, $H = AV$, $O = HW_O+X$, $Z = OW_C+\mathbf 1_Tb_C^\top$. $T = 4$, $D = 6$, $d_k = 3$, $d_v = 4$, $C = 5$ ; $W_Q,W_K\in\R^{6\times3}$, $W_V\in\R^{6\times4}$, $W_O\in\R^{4\times6}$, $W_C\in\R^{6\times5}$.</p>
+<p><b>Calcul.</b> Nombre de colonnes de chaque matrice (toutes ont $T = 4$ lignes) :
+$$Q:\ \blank{a},\qquad V:\ \blank{b},\qquad S, A:\ \blank{c},\qquad O:\ \blank{d},\qquad Z:\ \blank{e}.$$
+La somme résiduelle $HW_O+X$ n'est possible que parce que $W_O$ ramène la dimension $d_v$ à [[f]].</p>`,
+    blanks: {
+      a: { kind: 'num', ans: 3, tol: 0 }, b: { kind: 'num', ans: 4, tol: 0 }, c: { kind: 'num', ans: 4, tol: 0 }, d: { kind: 'num', ans: 6, tol: 0 }, e: { kind: 'num', ans: 5, tol: 0 },
+      f: { kind: 'word', ans: ['D', 'D = 6', '6'], tex: '$D$' },
+    } }, H),
+
+  Object.assign({ id: 'h5d', ch: 5, title: 'Rétropropager à travers $H = \\mathrm{softmax}(QK^\\top/\\sqrt{d_k})V$', src: 'HW5 P3.(2)',
+    text: R`<p class="hyp"><b>Cadre.</b> $S = QK^\top/\sqrt{d_k}$, $A = \mathrm{softmax}_{\text{row}}(S)$, $H = AV$, et $G_M := \partial L/\partial M$. On connaît $G_H$ et $\frac{\partial A_{ij}}{\partial S_{ik}} = A_{ij}(\mathbb 1\{j = k\}-A_{ik})$.</p>
+<p class="claim"><b>Proposition.</b> $G_A = G_HV^\top$, $G_V = A^\top G_H$, $G_S = A\odot(G_A-\mathbf r\mathbf 1^\top)$ avec $r_i = \sum_jA_{ij}(G_A)_{ij}$, $G_Q = G_SK/\sqrt{d_k}$, $G_K = G_S^\top Q/\sqrt{d_k}$.</p>
+<p><b>Preuve.</b></p>
+$$\begin{aligned}
+H_{ij} = \textstyle\sum_kA_{ik}V_{kj}\ &\Longrightarrow\ (G_A)_{ik} = \textstyle\sum_j(G_H)_{ij}\,\blank{a},\qquad G_V = \blank{b} &&\text{(i)}\\
+(G_S)_{ik} &= \textstyle\sum_j(G_A)_{ij}A_{ij}\big(\mathbb 1\{j = k\}-A_{ik}\big) = A_{ik}\big((G_A)_{ik}-\blank{c}\big) &&\text{(ii)}\\
+S_{ij} = \tfrac1{\sqrt{d_k}}\textstyle\sum_mQ_{im}K_{jm}\ &\Longrightarrow\ G_Q = \frac{G_S\,\blank{d}}{\sqrt{d_k}},\qquad G_K = \frac{\blank{e}\,Q}{\sqrt{d_k}}. &&\text{(iii)}
+\end{aligned}$$
+<p>Contrôle : chaque ligne de $G_S$ somme à $\blank{f}$, car $\sum_kA_{ik} = 1$. $\square$</p>`,
+    blanks: {
+      a: { kind: 'expr', ans: ['V_{kj}', 'V_kj'], tex: 'V_{kj}' },
+      b: { kind: 'expr', ans: [R`A^\top G_H`, 'A^T G_H', 'AᵀG_H'], tex: R`A^\top G_H` },
+      c: { kind: 'expr', ans: ['r_i', R`\sum_jA_{ij}(G_A)_{ij}`, 'sum_j A_ij (G_A)_ij'], tex: 'r_i' },
+      d: { kind: 'expr', ans: ['K'], tex: 'K' },
+      e: { kind: 'expr', ans: [R`G_S^\top`, 'G_S^T', 'G_Sᵀ'], tex: R`G_S^\top` },
+      f: { kind: 'num', ans: 0, tol: 0 },
+    } }, H),
   );
 })(window.ML);
