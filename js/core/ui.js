@@ -21,7 +21,7 @@
       '\\argmin': '\\operatorname*{arg\\,min}', '\\argmax': '\\operatorname*{arg\\,max}', '\\T': '^{\\top}', '\\hL': '\\hat{L}',
       '\\EMSE': '\\widehat{E}_{\\mathrm{MSE}}', '\\Var': '\\operatorname{Var}', '\\tr': '\\operatorname{tr}', '\\bmu': '\\boldsymbol{\\mu}',
       '\\bI': '\\mathbf{I}', '\\bA': '\\mathbf{A}', '\\bb': '\\mathbf{b}', '\\bP': '\\mathbf{P}', '\\bSigma': '\\boldsymbol{\\Sigma}',
-      '\\hby': '\\hat{\\mathbf{y}}', '\\bg': '\\mathbf{g}', '\\bv': '\\mathbf{v}', '\\bu': '\\mathbf{u}', '\\bz': '\\mathbf{z}', '\\be': '\\mathbf{e}',
+      '\\hby': '\\hat{\\mathbf{y}}', '\\bg': '\\mathbf{g}', '\\bv': '\\mathbf{v}', '\\bu': '\\mathbf{u}', '\\bz': '\\mathbf{z}', '\\be': '\\mathbf{e}', '\\bh': '\\mathbf{h}',
     },
   };
   ML.renderMath = el => { if (window.renderMathInElement) renderMathInElement(el, MATH_OPTS); };
