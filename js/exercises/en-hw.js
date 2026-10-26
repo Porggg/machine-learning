@@ -297,5 +297,41 @@ H_{ij} = \textstyle\sum_kA_{ik}V_{kj}\ &\Longrightarrow\ (G_A)_{ik} = \textstyle
 S_{ij} = \tfrac1{\sqrt{d_k}}\textstyle\sum_mQ_{im}K_{jm}\ &\Longrightarrow\ G_Q = \frac{G_S\,\blank{d}}{\sqrt{d_k}},\qquad G_K = \frac{\blank{e}\,Q}{\sqrt{d_k}}. &&\text{(iii)}
 \end{aligned}$$
 <p>Check: each row of $G_S$ sums to $\blank{f}$, because $\sum_kA_{ik} = 1$. $\square$</p>` },
+
+  // ------------------------------------------------------------------ HW6
+  h6a: { title: 'Exponential weighting: predicting before feedback',
+    text: R`<p class="hyp"><b>Setup.</b> Exponential weighting with experts $h_1,\dots,h_K$: $w_1 = (1,\dots,1)$; at round $t$, set $p_t(i) = w_t(i)/\sum_jw_t(j)$, sample $I_t\sim p_t$ and predict $\hat y_t = h_{I_t}(x_t)$, <em>then</em> observe $y_t$ and update $w_{t+1}(i) = w_t(i)\,e^{-\eta\ell_{t,i}}$ with $\ell_{t,i} = \ell(y_t,h_i(x_t))$.</p>
+<p class="claim"><b>Proposition.</b> The distribution $p_t$ does not depend on the current label $y_t$.</p>
+<p><b>Proof.</b></p>
+$$\begin{aligned}
+w_t(i) &= w_1(i)\prod_{s=1}^{\blank{a}}e^{-\eta\ell_{s,i}} = \exp\Big(-\eta\textstyle\sum_{s\lt t}\ell(y_s,h_i(x_s))\Big) &&\text{(i)}\\
+p_t(i) &= \frac{w_t(i)}{\sum_jw_t(j)}\ \text{involves only } y_1,\dots,y_{t-1}. &&\text{(ii)}
+\end{aligned}$$
+<p>In the algorithm, $y_t$ is observed [[b]] sampling $I_t$ and predicting; it is only used to compute $\blank{c}$. $\square$</p>`,
+    words: { b: { ans: ['after', 'après', 'apres'], tex: 'after' } } },
+
+  h6b: { title: 'Exponential weighting by hand: 0-1 classification',
+    text: R`<p class="hyp"><b>Data.</b> Two constant experts $h_1\equiv0$, $h_2\equiv1$; labels $(y_1,y_2) = (1,1)$; 0-1 loss $\ell_{t,i} = \mathbb 1[h_i(x_t)\ne y_t]$; exponential weighting with $\eta = \ln2$, $w_1 = (1,1)$, $T = 2$. Expected loss $\E[\ell_t] = \sum_ip_t(i)\ell_{t,i}$, $L^* = \min_i\sum_t\ell_{t,i}$, regret $R = \sum_t\E[\ell_t]-L^*$.</p>
+<p><b>Computation.</b></p>
+$$\begin{aligned}
+e^{-\eta\ell} &= \blank{a}\quad(\text{for }\eta = \ln2) &&\text{(i)}\\
+p_1 = \big(\tfrac12,\tfrac12\big),\ \ \ell_1 = (1,0)\ &\Longrightarrow\ \E[\ell_1] = \tfrac12,\qquad w_2 = \big(\blank{b},\ 1\big) &&\text{(ii)}\\
+p_2 &= \big(\blank{c},\ \tfrac23\big),\qquad \E[\ell_2] = \blank{d} &&\text{(iii)}\\
+L^* &= \blank{e},\qquad R = \tfrac12+\tfrac13-L^* = \blank{f}. &&\text{(iv)}
+\end{aligned}$$
+<p>EW moves its mass toward the expert that is always right, but pays for the exploration of the first round.</p>` },
+
+  h6c: { title: 'Exponential weighting by hand: regression, realized versus expected loss',
+    text: R`<p class="hyp"><b>Data.</b> Two constant experts $h_1\equiv1$, $h_2\equiv2$; targets $(y_1,y_2) = (1,3)$; squared loss $\ell_{t,i} = (h_i(x_t)-y_t)^2$; exponential weighting with $\eta = \ln2$, $w_1 = (1,1)$, $T = 2$. Expected loss $\E[\ell_t] = \sum_ip_t(i)\ell_{t,i}$, $L^* = \min_i\sum_t\ell_{t,i}$, regret $R = \sum_t\E[\ell_t]-L^*$.</p>
+<p><b>Computation.</b></p>
+$$\begin{aligned}
+\ell_1 = (0,1),\ \ \ell_2 &= \big(\blank{a},\ 1\big) &&\text{(i)}\\
+p_1 = \big(\tfrac12,\tfrac12\big)\ \Longrightarrow\ \E[\ell_1] = \tfrac12,\qquad w_2 &= \big(1,\ \blank{b}\big),\qquad p_2 = \big(\blank{c},\ \tfrac13\big) &&\text{(ii)}\\
+\E[\ell_2] &= \blank{d} &&\text{(iii)}\\
+L^* &= \min(4,2) = 2,\qquad R = \tfrac12+\E[\ell_2]-L^* = \blank{e} &&\text{(iv)}\\
+I_2 = 1\ \Longrightarrow\ \hat y_2 &= 1,\qquad \ell(y_2,\hat y_2) = \blank{f}. &&\text{(v)}
+\end{aligned}$$
+<p>The realized loss (v) is not equal to $\E[\ell_2]$: it is a [[g]] variable, equal to 4 with probability $p_2(1)$ and 1 with probability $p_2(2)$; only its mean equals $\E[\ell_2]$.</p>`,
+    words: { g: { ans: ['random', 'aléatoire', 'aleatoire'], tex: 'random' } } },
   });
 })(window.ML);

@@ -1,4 +1,4 @@
-/* Exercices à trous sur les devoirs HW1–HW4, format « sujet d'examen ».
+/* Exercices à trous sur les devoirs HW1–HW6, format « sujet d'examen ».
    Chaque exercice est autonome : cadre et données sont dans l'énoncé (aucune référence au sujet du devoir). */
 (function (ML) {
   'use strict';
@@ -436,6 +436,61 @@ S_{ij} = \tfrac1{\sqrt{d_k}}\textstyle\sum_mQ_{im}K_{jm}\ &\Longrightarrow\ G_Q 
       d: { kind: 'expr', ans: ['K'], tex: 'K' },
       e: { kind: 'expr', ans: [R`G_S^\top`, 'G_S^T', 'G_Sᵀ'], tex: R`G_S^\top` },
       f: { kind: 'num', ans: 0, tol: 0 },
+    } }, H),
+  // ------------------------------------------------------------------ HW6
+  Object.assign({ id: 'h6a', ch: 6, title: 'Exponential weighting : prédire avant le retour', src: 'HW6 P1.(1)',
+    text: R`<p class="hyp"><b>Cadre.</b> Exponential weighting avec experts $h_1,\dots,h_K$ : $w_1 = (1,\dots,1)$ ; au tour $t$, on pose $p_t(i) = w_t(i)/\sum_jw_t(j)$, on tire $I_t\sim p_t$ et on prédit $\hat y_t = h_{I_t}(x_t)$, <em>puis</em> on observe $y_t$ et on met à jour $w_{t+1}(i) = w_t(i)\,e^{-\eta\ell_{t,i}}$ avec $\ell_{t,i} = \ell(y_t,h_i(x_t))$.</p>
+<p class="claim"><b>Proposition.</b> La loi $p_t$ ne dépend pas de l'étiquette courante $y_t$.</p>
+<p><b>Preuve.</b></p>
+$$\begin{aligned}
+w_t(i) &= w_1(i)\prod_{s=1}^{\blank{a}}e^{-\eta\ell_{s,i}} = \exp\Big(-\eta\textstyle\sum_{s\lt t}\ell(y_s,h_i(x_s))\Big) &&\text{(i)}\\
+p_t(i) &= \frac{w_t(i)}{\sum_jw_t(j)}\ \text{ne fait intervenir que } y_1,\dots,y_{t-1}. &&\text{(ii)}
+\end{aligned}$$
+<p>Dans l'algorithme, $y_t$ est observé [[b]] le tirage de $I_t$ et la prédiction ; il ne sert qu'à calculer $\blank{c}$. $\square$</p>`,
+    blanks: {
+      a: { kind: 'expr', ans: ['t-1'], tex: 't-1' },
+      b: { kind: 'word', ans: ['après', 'apres', 'after'], tex: 'après' },
+      c: { kind: 'expr', ans: ['w_{t+1}', 'w_t+1', 'w_(t+1)', 'p_{t+1}'], tex: 'w_{t+1}' },
+    } }, H),
+
+  Object.assign({ id: 'h6b', ch: 6, title: 'Exponential weighting à la main : classification 0-1', src: 'HW6 P1.(2)',
+    text: R`<p class="hyp"><b>Données.</b> Deux experts constants $h_1\equiv0$, $h_2\equiv1$ ; étiquettes $(y_1,y_2) = (1,1)$ ; perte 0-1 $\ell_{t,i} = \mathbb 1[h_i(x_t)\ne y_t]$ ; exponential weighting avec $\eta = \ln2$, $w_1 = (1,1)$, $T = 2$. Perte espérée $\E[\ell_t] = \sum_ip_t(i)\ell_{t,i}$, $L^* = \min_i\sum_t\ell_{t,i}$, regret $R = \sum_t\E[\ell_t]-L^*$.</p>
+<p><b>Calcul.</b></p>
+$$\begin{aligned}
+e^{-\eta\ell} &= \blank{a}\quad(\text{pour }\eta = \ln2) &&\text{(i)}\\
+p_1 = \big(\tfrac12,\tfrac12\big),\ \ \ell_1 = (1,0)\ &\Longrightarrow\ \E[\ell_1] = \tfrac12,\qquad w_2 = \big(\blank{b},\ 1\big) &&\text{(ii)}\\
+p_2 &= \big(\blank{c},\ \tfrac23\big),\qquad \E[\ell_2] = \blank{d} &&\text{(iii)}\\
+L^* &= \blank{e},\qquad R = \tfrac12+\tfrac13-L^* = \blank{f}. &&\text{(iv)}
+\end{aligned}$$
+<p>EW déplace sa masse vers l'expert qui a toujours raison, mais paie l'exploration du premier tour.</p>`,
+    blanks: {
+      a: { kind: 'expr', ans: ['2^{-\\ell}', '2^-l', '2^(-l)', '2^-ℓ', '1/2^l', '2^{-l}'], tex: '2^{-\\ell}' },
+      b: { kind: 'num', ans: 1 / 2, tex: '\\tfrac12' },
+      c: { kind: 'num', ans: 1 / 3, tex: '\\tfrac13' },
+      d: { kind: 'num', ans: 1 / 3, tex: '\\tfrac13' },
+      e: { kind: 'num', ans: 0, tol: 0 },
+      f: { kind: 'num', ans: 5 / 6, tex: '\\tfrac56' },
+    } }, H),
+
+  Object.assign({ id: 'h6c', ch: 6, title: 'Exponential weighting à la main : régression, perte réalisée contre espérée', src: 'HW6 P2.(1)–(2)',
+    text: R`<p class="hyp"><b>Données.</b> Deux experts constants $h_1\equiv1$, $h_2\equiv2$ ; cibles $(y_1,y_2) = (1,3)$ ; perte carrée $\ell_{t,i} = (h_i(x_t)-y_t)^2$ ; exponential weighting avec $\eta = \ln2$, $w_1 = (1,1)$, $T = 2$. Perte espérée $\E[\ell_t] = \sum_ip_t(i)\ell_{t,i}$, $L^* = \min_i\sum_t\ell_{t,i}$, regret $R = \sum_t\E[\ell_t]-L^*$.</p>
+<p><b>Calcul.</b></p>
+$$\begin{aligned}
+\ell_1 = (0,1),\ \ \ell_2 &= \big(\blank{a},\ 1\big) &&\text{(i)}\\
+p_1 = \big(\tfrac12,\tfrac12\big)\ \Longrightarrow\ \E[\ell_1] = \tfrac12,\qquad w_2 &= \big(1,\ \blank{b}\big),\qquad p_2 = \big(\blank{c},\ \tfrac13\big) &&\text{(ii)}\\
+\E[\ell_2] &= \blank{d} &&\text{(iii)}\\
+L^* &= \min(4,2) = 2,\qquad R = \tfrac12+\E[\ell_2]-L^* = \blank{e} &&\text{(iv)}\\
+I_2 = 1\ \Longrightarrow\ \hat y_2 &= 1,\qquad \ell(y_2,\hat y_2) = \blank{f}. &&\text{(v)}
+\end{aligned}$$
+<p>La perte réalisée (v) n'est pas égale à $\E[\ell_2]$ : c'est une variable [[g]], qui vaut 4 avec probabilité $p_2(1)$ et 1 avec probabilité $p_2(2)$ ; seule sa moyenne vaut $\E[\ell_2]$.</p>`,
+    blanks: {
+      a: { kind: 'num', ans: 4, tol: 0 },
+      b: { kind: 'num', ans: 1 / 2, tex: '\\tfrac12' },
+      c: { kind: 'num', ans: 2 / 3, tex: '\\tfrac23' },
+      d: { kind: 'num', ans: 3, tol: 0 },
+      e: { kind: 'num', ans: 3 / 2, tex: '\\tfrac32' },
+      f: { kind: 'num', ans: 4, tol: 0 },
+      g: { kind: 'word', ans: ['aléatoire', 'aleatoire', 'random'], tex: 'aléatoire' },
     } }, H),
   );
 })(window.ML);
