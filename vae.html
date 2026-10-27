@@ -1,0 +1,585 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Autoencodeurs et VAE — Cours interactif ML</title>
+<link rel="stylesheet" href="lib/katex/katex.min.css">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <a class="brand" href="index.html"><span class="pi">∇</span>ML · POSTECH</a>
+  <nav>
+    <a href="index.html">Accueil</a>
+    <a href="linear-regression.html">1 · Régression linéaire</a>
+    <a href="logistic-regression.html">2 · Régression logistique</a>
+    <a href="svm.html">3 · SVM</a>
+    <a href="model-selection.html">4 · Sélection de modèle</a>
+    <a href="neural-networks.html">5 · Réseaux de neurones</a>
+    <a href="online-learning.html">6 · Apprentissage en ligne</a>
+    <a href="vae.html" class="active">7 · VAE</a>
+    <a href="exercises.html">Entraînement</a>
+    <a class="local-only" href="homework.html">Devoirs</a>
+  </nav>
+</header>
+
+<div class="layout">
+<aside class="sidebar">
+  <h4>Sommaire</h4>
+  <div class="toc"></div>
+  <div class="legend">
+    <h4>Sources</h4>
+    <div><span class="src slides">Slides</span> au programme (slides du cours)</div>
+    <div><span class="src book">PRML / DL</span> manuel de référence (lien → page)</div>
+    <div><span class="src extra">Hors slides</span> complément, pas dans les slides</div>
+  </div>
+</aside>
+
+<main class="content"><div class="content-inner">
+
+<h1>Autoencodeurs et VAE<span class="sub">Autoencoders &amp; Variational Autoencoders — ELBO · Reparamétrisation · Cours 16–17 (10/29, 11/3)</span></h1>
+<div class="sources">
+  <a class="src slides" href="../Slides/8-vae.pdf" target="_blank">Slides 8-vae (30 p.)</a>
+  <a class="src book" href="../Textbooks/Deep%20Learning%20-%20Foundations%20and%20Concepts.pdf#page=574" target="_blank">DL ch. 19 Autoencoders p.574</a>
+  <a class="src book" href="../Textbooks/Deep%20Learning%20-%20Foundations%20and%20Concepts.pdf#page=530" target="_blank">DL §16.3 Evidence lower bound</a>
+  <a class="src book" href="../Textbooks/Pattern%20Recognition%20and%20Machine%20Learning.pdf#page=482" target="_blank">PRML §10.1 Variational inference</a>
+</div>
+
+<p>Jusqu'ici, tous les modèles apprenaient à <b>prédire</b> une étiquette $y$ à partir de $x$. Ce chapitre n'a plus d'étiquettes : seulement des observations $x_1,\dots,x_N$. Il répond à <strong>deux questions</strong> : <em>comment résumer une donnée de grande dimension par quelques nombres, sans perdre l'essentiel ?</em> (l'<b>autoencodeur</b>), puis <em>comment apprendre la loi qui a produit les données, pour pouvoir en évaluer la vraisemblance et en <b>générer</b> de nouvelles ?</em> (l'<b>autoencodeur variationnel</b>, VAE). La difficulté centrale est une intégrale qu'on ne sait pas calculer ; on la contourne par une borne inférieure, l'<b>ELBO</b>, qu'on sait estimer et dériver grâce à l'<b>astuce de reparamétrisation</b>. Au début de chaque section, un encadré <span class="c-teal"><b>Où on en est</b></span> fait le point.</p>
+
+<h2 id="roadmap">Feuille de route</h2>
+<div class="sources"><a class="src slides" href="../Slides/8-vae.pdf#page=2" target="_blank">Slide p.2 (plan)</a></div>
+<p>Les slides ont deux parties : <b>réduire la dimension</b> (autoencodeur), puis <b>estimer une densité</b> (VAE). La seconde réutilise la structure encodeur–décodeur de la première, mais avec des lois au lieu de points. La chaîne complète, cliquable :</p>
+<div class="flow">
+<a class="st" href="#ae"><b>① Compresser · §1</b>autoencodeur $x\to z = f(x)\to\hat x = g(z)$<i>apprendre $f,g$ en reconstruisant $x$ : pas d'étiquette</i></a><div class="ar">→</div>
+<a class="st" href="#density"><b>② Modéliser · §2</b>estimer $p_\theta(x)\approx p_{\text{data}}(x)$<i>maximum de vraisemblance $\max_\theta\frac1N\sum_n\log p_\theta(x_n)$</i></a><div class="ar">→</div>
+<a class="st" href="#latent"><b>③ Variable latente · §3</b>$z\sim p(z)$, $x\sim p_\theta(x\mid z)$<i>générer est facile ; $p_\theta(x) = \int p(z)p_\theta(x\mid z)dz$ est intraitable</i></a><div class="ar">→</div>
+<a class="st" href="#elbo"><b>④ Borne · §4</b>$\mathcal L(x,\theta;q)\le\log p_\theta(x)$<i>écart $= \mathrm{KL}(q\,\|\,p_\theta(z\mid x))$</i></a><div class="ar">→</div>
+<a class="st" href="#vae"><b>⑤ VAE · §5</b>encodeur $q_\phi(z\mid x)$ partagé<i>ELBO = reconstruction − KL vers l'a priori</i></a><div class="ar">→</div>
+<a class="st" href="#grad"><b>⑥ Calculer · §6</b>Monte-Carlo, reparamétrisation, KL en forme close<i>$z = \mu_\phi(x)+\sigma_\phi(x)\odot\varepsilon$</i></a><div class="ar">→</div>
+<a class="st goal" href="#train"><b>⑦ Entraîner, générer · §7</b>montée de gradient stochastique sur $\hat{\mathcal L}_K$<i>puis $z\sim\mathcal N(0,I)$, $x\sim p_\theta(x\mid z)$</i></a>
+</div>
+
+<h3 id="roadmap-why">Le raisonnement, maillon par maillon</h3>
+<ol class="plan">
+<li><span class="n">①</span><b>Compresser sans étiquette.</b> Un encodeur $f$ envoie $x\in\R^D$ sur un code $z\in\R^M$ avec $M\ll D$. <span class="why">Sans étiquette, comment savoir ce que $z$ doit retenir ? On demande qu'un décodeur $g$ puisse <b>reconstruire</b> $x$ à partir de $z$ : la donnée est sa propre cible (« auto »). En linéaire, on retrouve exactement l'ACP.</span></li>
+<li><span class="n">②</span><b>Changer d'objectif : la loi des données.</b> Un code ne suffit pas pour générer. <span class="why">On veut un modèle $p_\theta(x)$ de la loi inconnue $p_{\text{data}}$, appris par maximum de vraisemblance. Il servira à deux choses : évaluer $\log p_\theta(x_{\text{new}})$ et tirer de nouveaux $\tilde x\sim p_\theta$.</span></li>
+<li><span class="n">③</span><b>Une variable cachée rend le modèle flexible.</b> On tire $z$ selon une loi simple, puis $x$ selon une gaussienne dont la moyenne est un réseau de neurones de $z$. <span class="why">Générer est alors immédiat, et la loi de $x$ peut épouser des formes compliquées. Mais sa densité est une intégrale sur $z$, sans forme close : on ne peut pas maximiser directement la vraisemblance.</span></li>
+<li><span class="n">④</span><b>Remplacer l'intégrale par une borne.</b> Pour toute densité auxiliaire $q(z)$, l'inégalité de Jensen donne $\log p_\theta(x)\ge\mathcal L(x,\theta;q)$, et $\mathcal L$ ne demande que $p_\theta(x,z)$ et $q$. <span class="why">L'écart vaut exactement $\mathrm{KL}(q\,\|\,p_\theta(z\mid x))$ : la borne est serrée quand $q$ est la vraie loi a posteriori.</span></li>
+<li><span class="n">⑤</span><b>Un $q$ par donnée, calculé par un réseau.</b> Au lieu d'optimiser un $q$ pour chaque $x$, un <b>encodeur</b> partagé produit $q_\phi(z\mid x)$. <span class="why">Encodeur probabiliste + décodeur probabiliste = autoencodeur variationnel. L'ELBO se réécrit « reconstruction − $\mathrm{KL}(q_\phi(z\mid x)\,\|\,p(z))$ ».</span></li>
+<li><span class="n">⑥</span><b>Estimer et dériver.</b> L'espérance sur $z$ s'estime par Monte-Carlo ; mais le gradient par rapport à l'encodeur disparaît si on fige les échantillons. <span class="why">La reparamétrisation $z = \mu+\sigma\odot\varepsilon$ fait passer le hasard dans $\varepsilon$, indépendant de $\phi$ : le gradient traverse $z$ par rétropropagation. Le terme KL se calcule exactement.</span></li>
+<li><span class="n">⑦</span><b>Entraîner, puis générer.</b> <span class="why">Montée de gradient stochastique sur l'ELBO estimée, conjointement en $\theta$ et $\phi$. Ensuite on jette l'encodeur : $z\sim\mathcal N(0,I)$ puis le décodeur. Le terme KL garantit que ces $z$ tombent là où le décodeur a appris quelque chose.</span></li>
+</ol>
+
+<div class="box intu"><div class="box-title">À la fin du chapitre, tu dois savoir…</div>
+<ul>
+<li>définir encodeur, décodeur, autoencodeur et son objectif de reconstruction, et expliquer pourquoi un autoencodeur linéaire retrouve l'ACP ;</li>
+<li>écrire le modèle à variable latente gaussien, échantillonner une donnée, et expliquer pourquoi $p_\theta(x)$ est intraitable ;</li>
+<li><b>démontrer</b> $\mathcal L(x,\theta;q)\le\log p_\theta(x)$ (Jensen) et $\log p_\theta(x)-\mathcal L(x,\theta;q) = \mathrm{KL}(q\,\|\,p_\theta(z\mid x))$ ;</li>
+<li>réécrire l'ELBO en « reconstruction − KL » et interpréter les deux termes ;</li>
+<li>expliquer pourquoi le gradient naïf par rapport à $\phi$ est nul, et comment la reparamétrisation le rétablit ;</li>
+<li><b>démontrer</b> $\mathrm{KL}\big(\mathcal N(\mu,\mathrm{diag}(\sigma^2))\,\|\,\mathcal N(0,I)\big) = \frac12\sum_j(\mu_j^2+\sigma_j^2-1-2\ln\sigma_j)$ ;</li>
+<li>dérouler une itération d'entraînement d'un VAE, et comparer autoencodeur et VAE.</li>
+</ul></div>
+
+<h2 id="notations">Notations du chapitre</h2>
+<p>Toutes les lettres utilisées dans la page (et dans les slides), au même endroit. Plusieurs lettres ont déjà servi dans d'autres chapitres avec un autre sens : voir l'encadré qui suit le tableau.</p>
+<div class="notation-wrap"><table class="notation">
+<thead><tr><th>Symbole</th><th>Se lit / signifie</th><th>Nature</th><th>Où</th></tr></thead>
+<tbody>
+<tr class="grp"><td colspan="4">Les données</td></tr>
+<tr><td>$x\in\R^D$, $x_1,\dots,x_N$</td><td>une observation (une image, un signal…) ; l'échantillon d'entraînement, <b>sans étiquette</b></td><td>vecteurs</td><td class="where">partout</td></tr>
+<tr><td>$p_{\text{data}}(x)$</td><td>la loi (inconnue) qui a produit les données ; $x_n\overset{\text{i.i.d.}}\sim p_{\text{data}}$</td><td>densité</td><td class="where">§2 →</td></tr>
+<tr class="grp"><td colspan="4">Autoencodeur (§1)</td></tr>
+<tr><td>$z\in\R^M$, $M\ll D$</td><td>code, ou représentation <b>latente</b> (« cachée ») de $x$</td><td>vecteur</td><td class="where">§1</td></tr>
+<tr><td>$f:\R^D\to\R^M$, $g:\R^M\to\R^D$</td><td><b>encodeur</b> et <b>décodeur</b> (déterministes) ; $\hat x = g(f(x))$ = reconstruction</td><td>fonctions (réseaux)</td><td class="where">§1</td></tr>
+<tr><td>$d(x,\hat x)$</td><td>erreur de reconstruction, souvent $\|x-\hat x\|^2$</td><td>réel $\ge0$</td><td class="where">§1</td></tr>
+<tr><td>$h$</td><td>classifieur appliqué au code, $\hat y = h(f(x))$ (slide 7)</td><td>fonction</td><td class="where">§1</td></tr>
+<tr class="grp"><td colspan="4">Modèle génératif (§2–3)</td></tr>
+<tr><td>$\theta$</td><td>paramètres du modèle, en pratique ceux du <b>décodeur</b></td><td>vecteur</td><td class="where">§2 →</td></tr>
+<tr><td>$p_\theta(x)$</td><td>densité du modèle (la <b>vraisemblance marginale</b>, ou « evidence »)</td><td>densité</td><td class="where">§2 →</td></tr>
+<tr><td>$p(z) = \N(z;0,I)$</td><td>loi <b>a priori</b> de la variable latente (prior)</td><td>densité</td><td class="where">§3 →</td></tr>
+<tr><td>$p_\theta(x\mid z)$, $p_\theta(x,z) = p(z)p_\theta(x\mid z)$</td><td>loi conditionnelle de $x$ sachant $z$ (le décodeur) ; loi jointe</td><td>densités</td><td class="where">§3 →</td></tr>
+<tr><td>$\mu_\theta(z) = \mu_{x\mid z}$, $\sigma_\theta(z) = \sigma_{x\mid z}$</td><td>sorties du décodeur : moyenne et écart-types de $p_\theta(x\mid z)$ (il sort $\ln\sigma$)</td><td>vecteurs de $\R^D$</td><td class="where">§3 →</td></tr>
+<tr><td>$\varepsilon_x\sim\N(0,I)$</td><td>bruit du décodeur : $x = \mu_\theta(z)+\sigma_\theta(z)\odot\varepsilon_x$</td><td>vecteur aléatoire</td><td class="where">§3</td></tr>
+<tr class="grp"><td colspan="4">ELBO et inférence (§4–5)</td></tr>
+<tr><td>$r(z) := p_\theta(z\mid x)$</td><td>loi <b>a posteriori</b> : quels $z$ sont plausibles sachant $x$</td><td>densité</td><td class="where">§4</td></tr>
+<tr><td>$q(z)$, $q_x(z)$, $q_\phi(z\mid x)$</td><td>densité <b>auxiliaire</b> sur $z$ : une seule ; une par $x$ ; produite par l'encodeur (slide 18)</td><td>densités</td><td class="where">§4 →</td></tr>
+<tr><td>$\phi$</td><td>paramètres de l'<b>encodeur</b></td><td>vecteur</td><td class="where">§5 →</td></tr>
+<tr><td>$\mu_\phi(x) = \mu_{z\mid x}$, $\sigma_\phi(x) = \sigma_{z\mid x}$</td><td>sorties de l'encodeur : moyenne et écart-types de $q_\phi(z\mid x)$ (il sort $\ln\sigma$)</td><td>vecteurs de $\R^J$</td><td class="where">§5 →</td></tr>
+<tr><td>$\mathcal L(x,\theta;q)$, $\mathcal L(x,\theta,\phi)$</td><td><b>ELBO</b> (evidence lower bound) pour $q$ quelconque ; pour $q = q_\phi(\cdot\mid x)$</td><td>réel</td><td class="where">§4 →</td></tr>
+<tr><td>$\mathrm{KL}(q\,\|\,r) = \E_{z\sim q}\big[\log\frac{q(z)}{r(z)}\big]$</td><td>divergence de Kullback–Leibler de $q$ à $r$</td><td>réel $\ge0$</td><td class="where">§2 →</td></tr>
+<tr class="grp"><td colspan="4">Calcul (§6–7)</td></tr>
+<tr><td>$K$, $z^{(k)}$</td><td>nombre d'échantillons Monte-Carlo ; le $k$-ième échantillon de $q_\phi(\cdot\mid x)$</td><td>entier ; vecteur</td><td class="where">§6 →</td></tr>
+<tr><td>$\hat R_K$</td><td>estimation Monte-Carlo du terme de reconstruction</td><td>réel aléatoire</td><td class="where">§6</td></tr>
+<tr><td>$\varepsilon,\ \varepsilon^{(k)}\sim\N(0,I)$</td><td>bruit de la reparamétrisation : $z = \mu_\phi(x)+\sigma_\phi(x)\odot\varepsilon$</td><td>vecteurs de $\R^J$</td><td class="where">§6 →</td></tr>
+<tr><td>$J$</td><td>dimension de $z$ (slide 25 ; c'est le $M$ du §1)</td><td>entier</td><td class="where">§6</td></tr>
+<tr><td>$\hat{\mathcal L}_K(x,\theta,\phi)$</td><td>ELBO estimée avec $K$ échantillons (l'objectif réellement optimisé)</td><td>réel aléatoire</td><td class="where">§7</td></tr>
+<tr><td>$\odot$, $\mathrm{diag}(\sigma^2)$</td><td>produit coordonnée par coordonnée ; matrice diagonale de coefficients $\sigma_j^2$</td><td>opérations</td><td class="where">§3 →</td></tr>
+</tbody></table></div>
+
+<div class="box warn"><div class="box-title">Pièges de notation (ils viennent des slides)</div>
+<ol>
+<li><b>$\phi$ change de sens</b> : aux chapitres 1–3, $\phi(x)$ était la fonction de caractéristiques (features) ; ici $\phi$ est le <b>vecteur des paramètres de l'encodeur</b>. $\theta$ désigne ceux du décodeur.</li>
+<li><b>La dimension latente s'appelle $M$</b> (slides 3–7) <b>puis $J$</b> (slide 25) : c'est la même chose.</li>
+<li><b>$K$</b> est ici le nombre d'échantillons Monte-Carlo (slides 22–26), pas un nombre de classes (chapitre 2) ni d'experts (chapitre 6).</li>
+<li><b>$\mathcal L$ est l'ELBO, qu'on maximise</b> ; ce n'est ni une perte (qu'on minimise), ni l'erreur de généralisation $L(f)$ du chapitre 4. Dans le code, on minimise $-\mathcal L$.</li>
+<li><b>Deux encodeurs, deux décodeurs</b> : au §1, $f$ et $g$ sont déterministes ($z = f(x)$). À partir du §3, $g_\theta(z) = (\mu_{x\mid z},\ln\sigma_{x\mid z})$ et $f_\phi(x) = (\mu_{z\mid x},\ln\sigma_{z\mid x})$ sortent les <b>paramètres d'une loi</b>.</li>
+<li><b>Deux $\sigma$</b> : $\sigma_{x\mid z}$ est le bruit du décodeur (sur $x$), $\sigma_{z\mid x}$ l'incertitude de l'encodeur (sur $z$). De même, deux bruits : $\varepsilon_x$ (slide 13, pour générer $x$) et $\varepsilon$ (slide 24, pour tirer $z$).</li>
+<li><b>Les réseaux sortent $\ln\sigma$</b>, pas $\sigma$ : $\ln\sigma$ peut être n'importe quel réel, et $\sigma = \exp(\ln\sigma)>0$ automatiquement.</li>
+<li><b>$\N(z;\mu,\Sigma)$</b> désigne la <b>densité</b> gaussienne évaluée en $z$ ; $z\sim\N(\mu,\Sigma)$ dit que $z$ suit cette loi.</li>
+<li><b>$r(z) = p_\theta(z\mid x)$ dépend de $x$</b> (fixé) et de $\theta$, même si la notation ne le montre pas. Même remarque pour $q(z)$ au §4.</li>
+<li><b>$\log$</b> est le logarithme népérien (comme $\ln$) ; les slides utilisent les deux.</li>
+</ol></div>
+
+<div class="box intu"><div class="box-title">Mode d'emploi des scènes</div>
+<ul>
+<li>Les scènes avec <b>▶ Lecture</b> entraînent un vrai réseau dans ton navigateur (rétropropagation écrite à la main, optimiseur Adam) ; « ↺ Reset » relance avec une autre initialisation.</li>
+<li>Les points à halo se déplacent à la souris. <b>◉ Affichage</b> (en haut à droite) masque ou affiche les éléments de chaque figure.</li>
+<li>Toutes les données sont en dimension 2 et le code $z$ en dimension 1 : c'est le seul cas où l'on peut tout dessiner. Les idées sont les mêmes en dimension 784 (MNIST) avec $z\in\R^{20}$.</li>
+</ul></div>
+
+<!-- ===================================================================== -->
+<h2 id="ae"><span class="num">1</span>Réduire la dimension : l'autoencodeur</h2>
+<div class="sources"><a class="src slides" href="../Slides/8-vae.pdf#page=3" target="_blank">Slides p.3–7</a><a class="src book" href="../Textbooks/Deep%20Learning%20-%20Foundations%20and%20Concepts.pdf#page=575" target="_blank">DL §19.1</a><a class="src book" href="../Textbooks/Pattern%20Recognition%20and%20Machine%20Learning.pdf#page=612" target="_blank">PRML §12.4.2</a></div>
+<div class="box road"><div class="box-title">Où on en est</div><div class="road-row"><span class="rk ok">Acquis</span><div>Chapitre 5 : un réseau de neurones est une fonction paramétrée, entraînée par rétropropagation sur une perte. Mais il fallait toujours une étiquette $y$.</div></div><div class="road-row"><span class="rk q">Il manque</span><div>Une façon d'apprendre une représentation compacte $z$ de $x$ <b>sans étiquette</b>.</div></div><div class="road-row"><span class="rk go">Cette partie</span><div>Encodeur, décodeur, objectif de reconstruction ; l'autoencodeur linéaire est l'ACP (preuve) ; application à l'apprentissage semi-supervisé.</div></div></div>
+<div class="vids"><div class="vids-title">▶ Vidéos<span>en anglais · s'ouvrent sur YouTube</span></div><div class="vids-grid"><a class="vid" href="https://www.youtube.com/watch?v=hZ4a4NgM3u0" target="_blank" rel="noopener"><span class="vid-thumb">▶<img src="https://i.ytimg.com/vi/hZ4a4NgM3u0/mqdefault.jpg" loading="lazy" alt="" onerror="this.remove()"></span><span class="vid-body"><span class="vid-ch">Deepia</span><span class="vid-t" style="display:block">Autoencoders | Deep Learning Animated</span><span class="vid-why" style="display:block">Encodeur, goulot d'étranglement, décodeur : la structure en animation.</span></span></a><a class="vid" href="https://www.youtube.com/watch?v=LHEj842yOF4" target="_blank" rel="noopener"><span class="vid-thumb">▶<img src="https://i.ytimg.com/vi/LHEj842yOF4/mqdefault.jpg" loading="lazy" alt="" onerror="this.remove()"></span><span class="vid-body"><span class="vid-ch">TileStats</span><span class="vid-t" style="display:block">Autoencoders - simply explained</span><span class="vid-why" style="display:block">Réduction de dimension par autoencodeur, et le lien avec l'ACP.</span></span></a></div></div>
+
+<div class="box def"><div class="box-title">Pourquoi réduire la dimension ? (slide 3)</div>
+Les observations de grande dimension contiennent souvent de l'information redondante ou inutile. Réduire la dimension, c'est les représenter avec <b>moins de variables</b>, $x\in\R^D\mapsto z\in\R^M$, en gardant la structure utile :
+<ul>
+<li><b>efficacité</b> : moins de stockage et de calcul ;</li>
+<li><b>conservation de l'information</b> : garder ce qu'il faut pour reconstruire $x$ ou pour une tâche de prédiction ultérieure.</li>
+</ul>
+<b>Question</b> : comment apprendre une telle représentation à partir de données <b>non étiquetées</b> ?
+</div>
+<div class="box def"><div class="box-title">Encodeur (slide 4) · Autoencodeur (slide 5)</div>
+Un <b>encodeur</b> est une fonction $f:\R^D\to\R^M$ qui envoie une observation $x$ sur une représentation latente $z = f(x)$, avec $M\ll D$. Un <b>décodeur</b> $g:\R^M\to\R^D$ renvoie le code dans l'espace des données. L'<b>autoencodeur</b> enchaîne les deux :
+$$x\ \xrightarrow{\ f\ }\ z = f(x)\ \xrightarrow{\ g\ }\ \hat x = g(z) = g(f(x)).$$
+Le préfixe « auto » indique que l'entrée $x$ est sa <b>propre cible</b> de reconstruction. Si $z$ capture l'essentiel de l'information de $x$, on doit pouvoir reconstruire $x$ à partir de $z$. $f$ et $g$ peuvent être des réseaux de neurones.
+</div>
+<div class="box def"><div class="box-title">Objectif d'apprentissage (slide 6)</div>
+Étant donné des données $x_1,\dots,x_N$, on apprend $f$ et $g$ en minimisant l'erreur de reconstruction :
+$$\min_{f,g}\ \frac1N\sum_{n=1}^Nd\big(x_n,\ g(f(x_n))\big),\qquad\text{souvent}\quad d\big(x_n,g(f(x_n))\big) = \big\|x_n-g(f(x_n))\big\|^2.$$
+</div>
+<details class="objs" open><summary>Les objets en jeu</summary><dl>
+<dt>$z = f(x)$</dt><dd><span class="ty">le code</span>$M$ nombres qui doivent « résumer » $x$. Le goulot d'étranglement $M\ll D$ est essentiel : avec $M\ge D$, $f = g = \mathrm{id}$ reconstruit parfaitement sans rien apprendre.</dd>
+<dt>$\hat x = g(z)$</dt><dd><span class="ty">reconstruction</span>Elle vit dans l'image de $g$, un ensemble « de dimension $M$ » dans $\R^D$ (une droite, une courbe, une surface…). L'autoencodeur apprend cet ensemble, au plus près des données.</dd>
+<dt>« pas d'étiquette »</dt><dd><span class="ty">apprentissage non supervisé</span>La perte ne compare $\hat x_n$ qu'à $x_n$ lui-même : c'est la structure des données qui fournit le signal d'apprentissage.</dd>
+</dl></details>
+
+<p>Commençons par le cas le plus simple : $f$ et $g$ linéaires (affines), $D = 2$ et $M = 1$. Le code est alors une coordonnée le long d'une droite, et la reconstruction est la projection sur cette droite.</p>
+<div data-scene="vae-pca"></div>
+
+<div class="box thm"><div class="box-title">Proposition — l'autoencodeur linéaire optimal est l'ACP <span class="hint">hors slides</span></div>
+Soit $\bar x = \frac1N\sum_nx_n$ et $S = \frac1N\sum_n(x_n-\bar x)(x_n-\bar x)^\top$, de valeurs propres $\lambda_1\ge\dots\ge\lambda_D\ge0$ et de vecteurs propres orthonormés $u_1,\dots,u_D$. Parmi les autoencodeurs affines $f(x) = A x+a$, $g(z) = Bz+b$ ($A\in\R^{M\times D}$, $B\in\R^{D\times M}$), l'erreur moyenne $\frac1N\sum_n\|x_n-g(f(x_n))\|^2$ vaut au moins
+$$\lambda_{M+1}+\dots+\lambda_D,$$
+et ce minimum est atteint par la projection sur les $M$ premières composantes principales : $f(x) = U^\top(x-\bar x)$, $g(z) = \bar x+Uz$, $U = [u_1,\dots,u_M]$.
+</div>
+<details class="proof"><summary>Preuve — complète, étape par étape</summary>
+<div class="proof-body">
+<div class="step"><b>① Ce que peut faire un autoencodeur affine.</b> $g(f(x)) = BAx+(Ba+b)$ appartient au sous-espace affine $b'+\mathrm{Im}(B)$, avec $b' = Ba+b$ et $\dim\mathrm{Im}(B)\le M$. Donc l'erreur est au moins celle du meilleur choix, pour chaque $x_n$, d'un point de ce sous-espace : la <b>projection orthogonale</b>. Il suffit de minimiser, sur les sous-espaces $\mathcal V$ de dimension $M$ (de base orthonormée $V\in\R^{D\times M}$, $V^\top V = I$) et les points $c$,
+$$E(c,V) = \frac1N\sum_n\big\|(x_n-c)-VV^\top(x_n-c)\big\|^2.$$
+<div class="why">On a donc ramené une question sur les réseaux à une question de géométrie : quel sous-espace affine passe au plus près des points ?</div></div>
+<div class="step"><b>② Le meilleur point $c$ est la moyenne.</b> Posons $P = I-VV^\top$ (projection sur l'orthogonal de $\mathcal V$, avec $P^\top = P$ et $P^2 = P$). Alors $E(c,V) = \frac1N\sum_n\|P(x_n-c)\|^2$. En écrivant $x_n-c = (x_n-\bar x)+(\bar x-c)$ et en développant, le terme croisé $\frac2N\sum_n(x_n-\bar x)^\top P(\bar x-c)$ est nul car $\sum_n(x_n-\bar x) = 0$. Donc
+$$E(c,V) = \frac1N\sum_n\|P(x_n-\bar x)\|^2+\|P(\bar x-c)\|^2\ \ge\ E(\bar x,V).$$</div>
+<div class="step"><b>③ L'erreur s'écrit avec $S$.</b> Pour $y = x_n-\bar x$ : $\|Py\|^2 = y^\top Py = \|y\|^2-\|V^\top y\|^2$ (Pythagore). En moyennant et avec $\frac1N\sum_n\|y_n\|^2 = \tr S$ et $\frac1N\sum_n\|V^\top y_n\|^2 = \tr(V^\top SV)$ :
+$$E(\bar x,V) = \tr S-\tr(V^\top SV) = \sum_{i=1}^D\lambda_i-\tr(V^\top SV).$$
+<div class="why">Minimiser l'erreur, c'est <b>maximiser la variance capturée</b> $\tr(V^\top SV)$ : les deux formulations de l'ACP sont la même.</div></div>
+<div class="step"><b>④ Majorer la variance capturée.</b> Écrivons $S = \sum_i\lambda_iu_iu_i^\top$. Alors
+$$\tr(V^\top SV) = \sum_i\lambda_i\,\|V^\top u_i\|^2 = \sum_i\lambda_ic_i,\qquad c_i := \|V^\top u_i\|^2.$$
+Les poids vérifient $0\le c_i\le\|u_i\|^2 = 1$ (projeter ne rallonge pas) et $\sum_ic_i = \sum_i\|V^\top u_i\|^2 = \|V^\top\|_F^2 = \tr(V^\top V) = M$. Sous ces contraintes, $\sum_i\lambda_ic_i$ est maximal en mettant tout le poids sur les plus grands $\lambda_i$ : $c_1 = \dots = c_M = 1$, les autres nuls. Précisément, $\sum_i\lambda_ic_i-\sum_{i\le M}\lambda_i = \sum_{i>M}\lambda_ic_i-\sum_{i\le M}\lambda_i(1-c_i)\le\lambda_M\big(\sum_{i>M}c_i-\sum_{i\le M}(1-c_i)\big) = \lambda_M\big(\sum_ic_i-M\big) = 0$. Donc $\tr(V^\top SV)\le\lambda_1+\dots+\lambda_M$.</div>
+<div class="step"><b>⑤ Conclusion.</b> Avec ③ et ④, $E\ge\sum_i\lambda_i-\sum_{i\le M}\lambda_i = \lambda_{M+1}+\dots+\lambda_D$. Pour $V = U$ : $c_i = 1$ si $i\le M$, 0 sinon, d'où l'égalité. Et $f(x) = U^\top(x-\bar x)$, $g(z) = \bar x+Uz$ réalisent exactement cette projection : $g(f(x)) = \bar x+UU^\top(x-\bar x)$.</div>
+<div class="qed">∎</div>
+</div></details>
+<p>Dans la scène, $\lambda_2$ est l'erreur minimale : sur le nuage gaussien, c'est peu ; sur l'arc ou la courbe en S, aucune droite ne convient. Un encodeur et un décodeur <b>non linéaires</b> (des réseaux) remplacent la droite par une courbe :</p>
+<div data-scene="vae-ae"></div>
+
+<div class="box def"><div class="box-title">Application : autoencodeur pour l'apprentissage semi-supervisé (slide 7)</div>
+Les données non étiquetées peuvent entraîner une représentation, avant que les données étiquetées n'entraînent le classifieur :
+<ol>
+<li>entraîner un autoencodeur sur <b>toutes</b> les observations, étiquetées ou non ;</li>
+<li>utiliser l'encodeur $f$ pour envoyer chaque $x$ sur sa représentation $z = f(x)$ ;</li>
+<li>entraîner (ou ajuster) un classifieur $h(f(x))$ sur les seules observations étiquetées.</li>
+</ol>
+Le décodeur $g$ ne sert qu'à l'entraînement de l'étape 1.
+</div>
+<div class="box q"><div class="box-title">Comment des données non étiquetées peuvent-elles dire ce que $z$ doit retenir ? (slide 4)</div>
+<details class="proof"><summary>Réponse</summary><div class="proof-body"><p>Par la reconstruction : $z$ doit contenir assez d'information pour que $g$ retrouve $x$. Comme $M\ll D$, l'encodeur ne peut pas tout garder ; l'objectif le pousse à garder ce qui <b>varie le plus</b> d'une donnée à l'autre (en linéaire, exactement les directions de plus grande variance, proposition ci-dessus). C'est souvent aussi ce qui est utile pour prédire, d'où l'usage semi-supervisé. Mais rien ne le garantit : un détail de faible variance (un petit défaut sur une pièce) peut être crucial pour la tâche et perdu par l'autoencodeur.</p></div></details></div>
+
+<!-- ===================================================================== -->
+<h2 id="density"><span class="num">2</span>Estimer une densité</h2>
+<div class="sources"><a class="src slides" href="../Slides/8-vae.pdf#page=9" target="_blank">Slides p.9–11</a></div>
+<div class="box road"><div class="box-title">Où on en est</div><div class="road-row"><span class="rk ok">Acquis</span><div>L'autoencodeur compresse et reconstruit. Mais ses codes $z_n$ sont placés n'importe où : on ne sait pas quels $z$ donnent des données réalistes, donc on ne peut pas <b>générer</b>.</div></div><div class="road-row"><span class="rk q">Il manque</span><div>Un modèle de la <b>loi</b> des données, qu'on puisse évaluer et échantillonner.</div></div><div class="road-row"><span class="rk go">Cette partie</span><div>L'estimation de densité par maximum de vraisemblance, son lien avec la divergence KL (preuve), et ses deux usages.</div></div></div>
+
+<div class="box def"><div class="box-title">Estimation de densité (slides 9–10)</div>
+L'estimation de densité apprend un modèle probabiliste $p_\theta(x)$ qui approche la loi des données : $p_\theta(x)\approx p_{\text{data}}(x)$. Avec $x_1,\dots,x_N\overset{\text{i.i.d.}}\sim p_{\text{data}}$, on maximise la vraisemblance :
+$$\max_\theta\ \frac1N\sum_{n=1}^N\log p_\theta(x_n).$$
+$p_{\text{data}}$ est inconnue : on n'observe que les échantillons. Le VAE introduit une <b>variable latente</b> pour définir et apprendre $p_\theta(x)$.
+</div>
+<div class="box def"><div class="box-title">Une loi apprise, deux usages (slide 11)</div>
+<ul>
+<li><b>Évaluer la vraisemblance</b> $\log p_\theta(x_{\text{new}})$ d'une nouvelle donnée (par exemple pour détecter une donnée anormale : très faible vraisemblance) ;</li>
+<li><b>échantillonner</b> $\tilde x\sim p_\theta(x)$ : générer de nouvelles données réalistes.</li>
+</ul>
+<b>Question</b> : comment entraîner un modèle de densité $p_\theta(x)$ <b>flexible</b> ?
+</div>
+<div class="box def"><div class="box-title">Divergence de Kullback–Leibler <span class="hint">utilisée aux slides 17 et 21</span></div>
+Pour deux densités $q$ et $r$ (avec $r>0$ là où $q>0$) :
+$$\mathrm{KL}(q\,\|\,r) := \E_{z\sim q}\Big[\log\frac{q(z)}{r(z)}\Big] = \int q(z)\log\frac{q(z)}{r(z)}\,dz.$$
+Elle mesure combien $r$ est « loin » de $q$, vue depuis $q$. Elle n'est <b>pas symétrique</b> : $\mathrm{KL}(q\|r)\ne\mathrm{KL}(r\|q)$ en général.
+</div>
+<div class="box thm"><div class="box-title">Lemme (inégalité de Gibbs) — $\mathrm{KL}(q\,\|\,r)\ge0$, avec égalité si et seulement si $q = r$</div></div>
+<details class="proof"><summary>Preuve — étape par étape</summary>
+<div class="proof-body">
+<div class="step"><b>① Une inégalité sur le logarithme.</b> Pour tout $u>0$, $\log u\le u-1$, avec égalité seulement en $u = 1$ : la fonction $\log$ est concave, donc sous sa tangente en $u = 1$, qui est $u\mapsto u-1$.</div>
+<div class="step"><b>② L'appliquer à $u = r(z)/q(z)$.</b> Là où $q(z)>0$ :
+$$-\mathrm{KL}(q\|r) = \int_{q>0}q(z)\log\frac{r(z)}{q(z)}\,dz\ \le\ \int_{q>0}q(z)\Big(\frac{r(z)}{q(z)}-1\Big)dz = \int_{q>0}r(z)\,dz-1\ \le\ 1-1 = 0.$$</div>
+<div class="step"><b>③ Cas d'égalité.</b> Il faut l'égalité dans ① pour presque tout $z$ (donc $r = q$ là où $q>0$), et $\int_{q>0}r = 1$ (donc $r$ n'a pas de masse ailleurs) : $q = r$.</div>
+<div class="qed">∎</div>
+</div></details>
+<div class="box thm"><div class="box-title">Proposition — maximiser la vraisemblance, c'est rapprocher $p_\theta$ de $p_{\text{data}}$ au sens de la KL <span class="hint">hors slides</span></div>
+$$\frac1N\sum_{n=1}^N\log p_\theta(x_n)\ \xrightarrow[N\to\infty]{}\ \E_{x\sim p_{\text{data}}}[\log p_\theta(x)] = -\mathrm{KL}(p_{\text{data}}\,\|\,p_\theta)-H(p_{\text{data}}),$$
+où $H(p_{\text{data}}) = -\E[\log p_{\text{data}}(x)]$ ne dépend pas de $\theta$. Donc (pour $N$ grand) $\max_\theta\frac1N\sum_n\log p_\theta(x_n)\iff\min_\theta\mathrm{KL}(p_{\text{data}}\,\|\,p_\theta)$, dont le minimum $0$ est atteint pour $p_\theta = p_{\text{data}}$.
+</div>
+<details class="proof"><summary>Preuve</summary>
+<div class="proof-body">
+<div class="step"><b>① Loi des grands nombres.</b> Les $\log p_\theta(x_n)$ sont i.i.d. (car les $x_n$ le sont), donc leur moyenne tend vers leur espérance $\E_{p_{\text{data}}}[\log p_\theta(x)]$.</div>
+<div class="step"><b>② Faire apparaître la KL.</b> On ajoute et retranche $\log p_{\text{data}}(x)$ :
+$$\E_{p_{\text{data}}}[\log p_\theta(x)] = \E_{p_{\text{data}}}\Big[\log\frac{p_\theta(x)}{p_{\text{data}}(x)}\Big]+\E_{p_{\text{data}}}[\log p_{\text{data}}(x)] = -\mathrm{KL}(p_{\text{data}}\,\|\,p_\theta)-H(p_{\text{data}}).$$</div>
+<div class="step"><b>③ Conclusion.</b> Le second terme ne dépend pas de $\theta$ ; le premier est $\le0$ (lemme de Gibbs), nul si et seulement si $p_\theta = p_{\text{data}}$.</div>
+<div class="qed">∎</div>
+</div></details>
+<p>Avec un modèle trop rigide, le maximum de vraisemblance reste loin de $p_{\text{data}}$. Dans la scène, une seule gaussienne ne peut pas décrire deux groupes ; un modèle avec une variable cachée « quel groupe ? » y arrive :</p>
+<div data-scene="vae-mle"></div>
+
+<!-- ===================================================================== -->
+<h2 id="latent"><span class="num">3</span>Modèles à variable latente : générer est facile</h2>
+<div class="sources"><a class="src slides" href="../Slides/8-vae.pdf#page=12" target="_blank">Slides p.12–15</a><a class="src book" href="../Textbooks/Deep%20Learning%20-%20Foundations%20and%20Concepts.pdf#page=536" target="_blank">DL §16.4</a></div>
+<div class="box road"><div class="box-title">Où on en est</div><div class="road-row"><span class="rk ok">Acquis</span><div>L'objectif : $\max_\theta\sum_n\log p_\theta(x_n)$, avec un modèle assez flexible.</div></div><div class="road-row"><span class="rk q">Il manque</span><div>Une famille $p_\theta(x)$ à la fois flexible et facile à échantillonner.</div></div><div class="road-row"><span class="rk go">Cette partie</span><div>Le modèle à variable latente, son cas gaussien, le décodeur, et l'intégrale qui bloque le maximum de vraisemblance.</div></div></div>
+
+<div class="box def"><div class="box-title">Modèle de densité à variable latente (slide 12)</div>
+Soit $z$ une variable latente de loi a priori simple $p(z)$, par exemple $\N(0,I)$, et $p_\theta(x\mid z)$ la loi des observations sachant $z$ :
+$$p_\theta(x,z) = p(z)\,p_\theta(x\mid z).$$
+<ul>
+<li><b>Échantillonner</b> : tirer $z\sim p(z)$, puis $x\sim p_\theta(x\mid z)$. On suppose que $p(z)$ et $p_\theta(x\mid z)$ sont faciles à échantillonner.</li>
+<li><b>Évaluer la vraisemblance</b> : marginaliser la variable latente,
+$$p_\theta(x) = \int p(z)\,p_\theta(x\mid z)\,dz.$$
+Cette intégrale est en général <b>intraitable</b>, ce qui rend difficile le maximum de vraisemblance direct.</li>
+</ul>
+</div>
+<div class="box def"><div class="box-title">Le modèle gaussien (slide 13) · le décodeur (slide 14)</div>
+On choisit un a priori gaussien standard et une loi conditionnelle gaussienne diagonale :
+$$p(z) = \N(z;0,I),\qquad p_\theta(x\mid z) = \N\big(x;\ \mu_\theta(z),\ \mathrm{diag}(\sigma_\theta^2(z))\big).$$
+Le <b>décodeur</b> $g_\theta$ est un réseau qui envoie $z$ sur la moyenne et les log-écart-types :
+$$g_\theta(z) = \begin{pmatrix}\mu_{x\mid z}\\ \ln\sigma_{x\mid z}\end{pmatrix},\qquad \mu_{x\mid z} = \mu_\theta(z),\quad\sigma_{x\mid z} = \sigma_\theta(z) = \exp(\ln\sigma_{x\mid z})>0.$$
+Pour générer : tirer indépendamment $z\sim\N(0,I)$ et $\varepsilon_x\sim\N(0,I)$, puis calculer
+$$x = \mu_\theta(z)+\sigma_\theta(z)\odot\varepsilon_x.$$
+Cela donne un échantillon de la marginale $p_\theta(x)$, qui n'a <b>pas</b> besoin d'être gaussienne.
+</div>
+<details class="objs" open><summary>Les objets en jeu</summary><dl>
+<dt>$p(z) = \N(0,I)$</dt><dd><span class="ty">fixée, sans paramètre</span>Toute la flexibilité est dans le décodeur. Un a priori simple suffit : un réseau peut « déformer » une gaussienne en presque n'importe quelle loi.</dd>
+<dt>$\mu_\theta(z)$</dt><dd><span class="ty">réseau $\R^J\to\R^D$</span>Quand $z$ parcourt $\R^J$, $\mu_\theta(z)$ décrit une « surface » de dimension $J$ dans $\R^D$ : la <b>variété</b> des données.</dd>
+<dt>$\sigma_\theta(z)$</dt><dd><span class="ty">épaisseur</span>Le bruit autour de cette surface. Sans lui ($\sigma\to0$), $p_\theta(x)$ ne serait pas une vraie densité sur $\R^D$ : toute la masse serait sur la surface.</dd>
+</dl></details>
+<div class="box thm"><div class="box-title">Proposition — l'échantillonnage en deux temps produit bien $p_\theta(x)$, et le cas linéaire</div>
+(a) Si $z\sim p(z)$ et $\varepsilon_x\sim\N(0,I)$ sont indépendants, alors $x = \mu_\theta(z)+\sigma_\theta(z)\odot\varepsilon_x$ a pour densité $p_\theta(x) = \int p(z)p_\theta(x\mid z)dz$.<br>
+(b) <span class="hint">hors slides</span> Si le décodeur est linéaire, $\mu_\theta(z) = Wz+b$ et $\sigma_\theta(z) = \sigma\mathbf 1$ constant, alors $p_\theta(x) = \N(x;\ b,\ WW^\top+\sigma^2I)$ : la marginale est gaussienne (c'est l'<b>ACP probabiliste</b>). Avec un décodeur non linéaire, elle ne l'est plus en général.
+</div>
+<details class="proof"><summary>Preuve</summary>
+<div class="proof-body">
+<div class="step"><b>① Sachant $z$.</b> Si on fixe $z$, $x = \mu_\theta(z)+\sigma_\theta(z)\odot\varepsilon_x$ est une transformation affine de $\varepsilon_x\sim\N(0,I)$ : chaque coordonnée $x_d = \mu_d+\sigma_d\varepsilon_{x,d}$ suit $\N(\mu_d,\sigma_d^2)$, indépendamment des autres. Donc la loi de $x$ sachant $z$ est $\N(\mu_\theta(z),\mathrm{diag}(\sigma_\theta^2(z))) = p_\theta(x\mid z)$, car $\varepsilon_x$ est indépendant de $z$.</div>
+<div class="step"><b>② Marginaliser.</b> La densité jointe de $(z,x)$ est $p(z)p_\theta(x\mid z)$ ; la densité de $x$ s'obtient en intégrant sur $z$ : $p_\theta(x) = \int p(z)p_\theta(x\mid z)dz$. C'est (a).</div>
+<div class="step"><b>③ Le cas linéaire.</b> $x = Wz+b+\sigma\varepsilon_x$ est une combinaison affine du vecteur gaussien $(z,\varepsilon_x)$ (composantes indépendantes $\N(0,1)$), donc gaussien. Sa moyenne est $W\E[z]+b+\sigma\E[\varepsilon_x] = b$. Sa covariance, par indépendance de $z$ et $\varepsilon_x$ : $W\,\mathrm{Cov}(z)\,W^\top+\sigma^2\mathrm{Cov}(\varepsilon_x) = WW^\top+\sigma^2I$. C'est (b).</div>
+<div class="step"><b>④ Le cas non linéaire.</b> Exemple : $J = 1$, $\mu_\theta(z) = (1.6,0.8)\tanh(3z)$, $\sigma$ petit. Presque toute la masse est près des deux points $\pm(1.6,0.8)$ : $p_\theta$ a deux bosses, ce qu'aucune gaussienne ne fait (une densité gaussienne a un seul maximum). Voir le décodeur « deux groupes » de la scène.</div>
+<div class="qed">∎</div>
+</div></details>
+<div data-scene="vae-gen"></div>
+
+<div class="box def"><div class="box-title">Évaluer la vraisemblance : une intégrale intraitable (slide 15)</div>
+Sous le modèle gaussien,
+$$p_\theta(x) = \int p(z)\,p_\theta(x\mid z)\,dz = \int\N(z;0,I)\,\N\big(x;\mu_\theta(z),\mathrm{diag}(\sigma_\theta^2(z))\big)\,dz.$$
+<ul>
+<li>Pour un $z$ <b>fixé</b>, la densité gaussienne $p_\theta(x\mid z)$ est facile à évaluer.</li>
+<li>Avec un décodeur non linéaire, l'intégrale sur $z$ n'a en général <b>pas de forme close</b>.</li>
+</ul>
+Comment entraîner $\theta$ à maximiser $\log p_\theta(x)$ quand on ne sait pas l'évaluer ? Trois pistes (slide 15) :
+<ol>
+<li>Si $z$ était discret : $\log p_\theta(x) = \log\sum_zp_\theta(x,z)\ge\max_z\log p_\theta(x,z)$ (une somme de termes positifs dépasse chacun d'eux). Une borne inférieure… mais grossière.</li>
+<li>Pour toute densité $q$ avec $q(z)>0$ : $\log p_\theta(x) = \log\E_{z\sim q}\Big[\dfrac{p_\theta(x,z)}{q(z)}\Big]$. Exact, mais souvent difficile à optimiser directement.</li>
+<li>$\log\E_{z\sim q}\Big[\dfrac{p_\theta(x,z)}{q(z)}\Big]\ge\E_{z\sim q}\Big[\log\dfrac{p_\theta(x,z)}{q(z)}\Big]$ : <b>c'est ce qu'on va apprendre</b> (§4).</li>
+</ol>
+</div>
+<div class="box q"><div class="box-title">Pourquoi l'intégrale est-elle « intraitable » si on sait la calculer en dimension 1 ?</div>
+<details class="proof"><summary>Réponse</summary><div class="proof-body"><p>En dimension 1, une quadrature (une somme sur une grille de $z$) suffit : c'est ce que fait la scène avec 241 points. Mais une grille de $m$ points par axe en dimension $J$ en compte $m^J$ : $241^{20}\approx10^{47}$ pour $J = 20$. On peut tirer des $z\sim p(z)$ au hasard et moyenner $p_\theta(x\mid z)$ (Monte-Carlo), mais presque tous les $z$ tirés « au hasard » donnent $p_\theta(x\mid z)\approx0$ : seule une petite région de $z$ explique un $x$ donné. L'estimation est alors très bruitée. D'où l'idée de tirer $z$ selon une loi $q$ concentrée sur cette région (piste 2), puis de passer au log (piste 3).</p></div></details></div>
+<div class="box q"><div class="box-title">Pourquoi la piste 2 (exacte) est-elle « difficile à optimiser directement » ?</div>
+<details class="proof"><summary>Réponse</summary><div class="proof-body"><p>On estimerait $\E_q[p_\theta(x,z)/q(z)]$ par une moyenne de $K$ échantillons, puis on prendrait le log. Or le log d'une moyenne n'est pas la moyenne des logs : $\E\big[\log\frac1K\sum_k w_k\big]\le\log\E[w]$ (Jensen). L'estimateur de $\log p_\theta(x)$ est donc <b>biaisé</b> (vers le bas), et son gradient aussi ; les rapports $w_k = p_\theta(x,z^{(k)})/q(z^{(k)})$ peuvent en plus varier de plusieurs ordres de grandeur. La piste 3 accepte une borne inférieure, mais une borne dont l'estimateur et le gradient sont <b>sans biais</b> (§6).</p></div></details></div>
+
+<!-- ===================================================================== -->
+<h2 id="elbo"><span class="num">4</span>L'ELBO : une borne inférieure qu'on sait calculer</h2>
+<div class="sources"><a class="src slides" href="../Slides/8-vae.pdf#page=16" target="_blank">Slides p.16–17</a><a class="src book" href="../Textbooks/Deep%20Learning%20-%20Foundations%20and%20Concepts.pdf#page=530" target="_blank">DL §16.3</a><a class="src book" href="../Textbooks/Pattern%20Recognition%20and%20Machine%20Learning.pdf#page=482" target="_blank">PRML §10.1</a></div>
+<div class="box road"><div class="box-title">Où on en est</div><div class="road-row"><span class="rk ok">Acquis</span><div>Un modèle génératif flexible, mais dont la log-vraisemblance $\log p_\theta(x)$ est une intégrale intraitable.</div></div><div class="road-row"><span class="rk q">Il manque</span><div>Une quantité calculable qu'on puisse maximiser à la place, et une garantie qu'elle est proche de $\log p_\theta(x)$.</div></div><div class="road-row"><span class="rk go">Cette partie</span><div>L'ELBO et sa preuve par Jensen ; l'écart exact $\mathrm{KL}(q\,\|\,p_\theta(z\mid x))$ ; la borne est serrée pour $q$ = loi a posteriori.</div></div></div>
+<div class="vids"><div class="vids-title">▶ Vidéos<span>en anglais · s'ouvrent sur YouTube</span></div><div class="vids-grid"><a class="vid" href="https://www.youtube.com/watch?v=HBYQvKlaE0A" target="_blank" rel="noopener"><span class="vid-thumb">▶<img src="https://i.ytimg.com/vi/HBYQvKlaE0A/mqdefault.jpg" loading="lazy" alt="" onerror="this.remove()"></span><span class="vid-body"><span class="vid-ch">DeepBean</span><span class="vid-t" style="display:block">Understanding Variational Autoencoders (VAEs)</span><span class="vid-why" style="display:block">Variable latente, ELBO et écart KL, présentés dans l'ordre de ce chapitre.</span></span></a><a class="vid" href="https://www.youtube.com/watch?v=xH1mBw3tb_c" target="_blank" rel="noopener"><span class="vid-thumb">▶<img src="https://i.ytimg.com/vi/xH1mBw3tb_c/mqdefault.jpg" loading="lazy" alt="" onerror="this.remove()"></span><span class="vid-body"><span class="vid-ch">BayesGroup.ru (Deep Bayes 2019)</span><span class="vid-t" style="display:block">Day 1, Lecture 3. Variational inference</span><span class="vid-why" style="display:block">Cours complet sur l'inférence variationnelle : la borne, l'écart KL, le choix de $q$.</span></span></a></div></div>
+
+<div class="box thm"><div class="box-title">Evidence Lower Bound — ELBO (slide 16)</div>
+Pour $x$ fixé, toute densité auxiliaire $q(z)$ telle que $q(z)>0$ partout où $p_\theta(x,z)>0$ donne une borne inférieure :
+$$\mathcal L(x,\theta;q) := \E_{z\sim q}\Big[\log\frac{p_\theta(x,z)}{q(z)}\Big]\ \le\ \log p_\theta(x).$$
+On choisit $q$ facile à échantillonner et à évaluer : on estime alors l'ELBO avec seulement $p_\theta(x,z)$ et $q(z)$, <b>sans évaluer</b> $p_\theta(x)$.
+</div>
+<details class="objs" open><summary>Les objets en jeu</summary><dl>
+<dt>$q(z)$</dt><dd><span class="ty">densité choisie par nous</span>Elle sert à « viser » les $z$ qui expliquent $x$. N'importe quelle densité donne une borne valide ; une bonne densité donne une borne proche.</dd>
+<dt>$p_\theta(x,z)/q(z)$</dt><dd><span class="ty">poids d'importance</span>Son espérance sous $q$ vaut exactement $p_\theta(x)$ (piste 2 de la slide 15).</dd>
+<dt>« evidence »</dt><dd><span class="ty">vocabulaire</span>$p_\theta(x)$, la vraisemblance marginale de l'observation, s'appelle l'« évidence » en statistique bayésienne ; l'ELBO est une borne inférieure de son log.</dd>
+</dl></details>
+<details class="proof" open><summary>Preuve (slide 16) — étape par étape</summary>
+<div class="proof-body">
+<div class="step"><b>① Multiplier et diviser par $q$.</b> Là où $p_\theta(x,z)>0$, on a $q(z)>0$ par hypothèse, donc
+$$p_\theta(x) = \int p_\theta(x,z)\,dz = \int q(z)\,\frac{p_\theta(x,z)}{q(z)}\,dz = \E_{z\sim q}\Big[\frac{p_\theta(x,z)}{q(z)}\Big].$$
+<div class="why">L'hypothèse de support garantit qu'on n'oublie aucune partie de l'intégrale en se restreignant à $\{q>0\}$.</div></div>
+<div class="step"><b>② Inégalité de Jensen pour le log.</b> Le log est concave, donc pour toute variable aléatoire $Y>0$ d'espérance finie, $\log\E[Y]\ge\E[\log Y]$. Preuve en une ligne : avec $a = \E[Y]>0$, la tangente donne $\log Y\le\log a+\frac{Y-a}a$ ; on prend l'espérance : $\E[\log Y]\le\log a+0$.</div>
+<div class="step"><b>③ Conclure.</b> Avec $Y = p_\theta(x,z)/q(z)$ et $z\sim q$ :
+$$\log p_\theta(x) = \log\E_z\Big[\frac{p_\theta(x,z)}{q(z)}\Big]\ \ge\ \E_z\Big[\log\frac{p_\theta(x,z)}{q(z)}\Big] = \mathcal L(x,\theta;q).$$</div>
+<div class="qed">∎</div>
+</div></details>
+
+<div class="box thm"><div class="box-title">Représentation variationnelle exacte (slide 17)</div>
+Soit $r(z) := p_\theta(z\mid x) = p_\theta(x,z)/p_\theta(x)$ la loi a posteriori (quels $z$ sont plausibles sachant $x$). Alors pour toute $q$ admissible,
+$$\log p_\theta(x)-\mathcal L(x,\theta;q) = \mathrm{KL}(q\,\|\,r)\ \ge\ 0,\qquad\text{donc}\qquad\log p_\theta(x) = \max_q\ \mathcal L(x,\theta;q),$$
+et le maximum est atteint en $q = r$ (borne serrée : $\mathrm{KL}(r\|r) = 0$).
+</div>
+<details class="proof" open><summary>Preuve (slide 17) — étape par étape</summary>
+<div class="proof-body">
+<div class="step"><b>① Mettre $\log p_\theta(x)$ sous l'espérance.</b> $\log p_\theta(x)$ ne dépend pas de $z$, donc $\log p_\theta(x) = \E_{z\sim q}[\log p_\theta(x)]$. Alors
+$$\log p_\theta(x)-\mathcal L(x,\theta;q) = \E_z\Big[\log p_\theta(x)-\log\frac{p_\theta(x,z)}{q(z)}\Big] = \E_z\Big[\log\frac{q(z)\,p_\theta(x)}{p_\theta(x,z)}\Big].$$</div>
+<div class="step"><b>② Règle de Bayes.</b> $\dfrac{p_\theta(x,z)}{p_\theta(x)} = p_\theta(z\mid x) = r(z)$, donc
+$$\E_z\Big[\log\frac{q(z)\,p_\theta(x)}{p_\theta(x,z)}\Big] = \E_z\Big[\log\frac{q(z)}{r(z)}\Big] = \mathrm{KL}(q\,\|\,r).$$</div>
+<div class="step"><b>③ Positivité et égalité.</b> Par le lemme de Gibbs (§2), $\mathrm{KL}(q\|r)\ge0$, nul si et seulement si $q = r$. Donc $\mathcal L(x,\theta;q)\le\log p_\theta(x)$ pour tout $q$ (on retrouve l'ELBO), avec égalité en $q = r$ : le $\max_q$ vaut $\log p_\theta(x)$.</div>
+<div class="qed">∎</div>
+</div></details>
+<div class="box intu"><div class="box-title">Ce que dit l'égalité, en une phrase</div>
+$$\underbrace{\log p_\theta(x)}_{\text{ne dépend pas de }q}\ =\ \underbrace{\mathcal L(x,\theta;q)}_{\text{calculable}}\ +\ \underbrace{\mathrm{KL}(q\,\|\,p_\theta(z\mid x))}_{\ge0,\ \text{incalculable}}.$$
+Comme la somme ne dépend pas de $q$, <b>monter l'ELBO en $q$, c'est faire descendre la KL</b> : on rapproche $q$ de la vraie loi a posteriori, sans jamais l'évaluer.
+</div>
+<p>Dans la scène, $z$ est de dimension 1 : on peut calculer $\log p_\theta(x)$, la postérieure $r$, et vérifier numériquement que l'écart vaut la KL. Choisis une gaussienne $q$ à la main, puis laisse l'optimisation chercher la meilleure.</p>
+<div data-scene="vae-elbo"></div>
+<div class="box q"><div class="box-title">Quand la borne est-elle serrée ? (slide 16)</div>
+<details class="proof"><summary>Réponse</summary><div class="proof-body"><p>Exactement quand $q = p_\theta(z\mid x)$ (slide 17). Dans le cas linéaire-gaussien, la postérieure est gaussienne : une famille gaussienne pour $q$ peut l'atteindre, l'écart s'annule (premier modèle de la scène). Avec un décodeur non linéaire, la postérieure peut avoir deux bosses ou être asymétrique ; une $q$ gaussienne ne l'atteint pas, et il reste un écart (le « gap variationnel »). Comme la KL est prise « depuis $q$ », $\mathrm{KL}(q\|r)$ est énorme si $q$ met de la masse là où $r\approx0$ : la meilleure $q$ se loge dans <b>une</b> bosse plutôt que de les couvrir toutes les deux.</p></div></details></div>
+
+<!-- ===================================================================== -->
+<h2 id="vae"><span class="num">5</span>Un encodeur pour toutes les données : le VAE</h2>
+<div class="sources"><a class="src slides" href="../Slides/8-vae.pdf#page=18" target="_blank">Slides p.18–21</a><a class="src book" href="../Textbooks/Deep%20Learning%20-%20Foundations%20and%20Concepts.pdf#page=580" target="_blank">DL §19.2</a><a class="src book" href="../Textbooks/Deep%20Learning%20-%20Foundations%20and%20Concepts.pdf#page=583" target="_blank">DL §19.2.1 (amortized inference)</a></div>
+<div class="box road"><div class="box-title">Où on en est</div><div class="road-row"><span class="rk ok">Acquis</span><div>Pour chaque $x$, la meilleure borne s'obtient avec $q\approx p_\theta(z\mid x)$, qui dépend de $x$.</div></div><div class="road-row"><span class="rk q">Il manque</span><div>Une façon efficace d'obtenir un bon $q$ pour chacune des $N$ données (et pour les nouvelles).</div></div><div class="road-row"><span class="rk go">Cette partie</span><div>L'encodeur partagé $q_\phi(z\mid x)$ (inférence amortie), l'encodeur gaussien, le nom du VAE, et la réécriture de l'ELBO en reconstruction − KL (preuve).</div></div></div>
+<div class="vids"><div class="vids-title">▶ Vidéos<span>en anglais · s'ouvrent sur YouTube</span></div><div class="vids-grid"><a class="vid" href="https://www.youtube.com/watch?v=9zKuYvjFFS8" target="_blank" rel="noopener"><span class="vid-thumb">▶<img src="https://i.ytimg.com/vi/9zKuYvjFFS8/mqdefault.jpg" loading="lazy" alt="" onerror="this.remove()"></span><span class="vid-body"><span class="vid-ch">Arxiv Insights</span><span class="vid-t" style="display:block">Variational Autoencoders</span><span class="vid-why" style="display:block">De l'autoencodeur au VAE, l'espace latent régulier, et des exemples de génération.</span></span></a><a class="vid" href="https://www.youtube.com/watch?v=qJeaCHQ1k2w" target="_blank" rel="noopener"><span class="vid-thumb">▶<img src="https://i.ytimg.com/vi/qJeaCHQ1k2w/mqdefault.jpg" loading="lazy" alt="" onerror="this.remove()"></span><span class="vid-body"><span class="vid-ch">Deepia</span><span class="vid-t" style="display:block">Variational Autoencoders | Generative AI Animated</span><span class="vid-why" style="display:block">Le VAE en animation : encodeur probabiliste, décodeur, objectif.</span></span></a></div></div>
+
+<div class="box def"><div class="box-title">Densité auxiliaire conditionnelle (slide 18)</div>
+On choisit une densité auxiliaire $q(z\mid x)$ <b>conditionnée</b> par l'observation, en trois étapes :
+$$\underbrace{q(z)}_{\text{une densité sur }z}\ \longrightarrow\ \underbrace{q_x(z)}_{\text{un choix pour chaque }x}\ \longrightarrow\ \underbrace{q_\phi(z\mid x)}_{\text{un encodeur partagé}}$$
+<ul>
+<li>Adapter $q$ à chaque $x$ donne une borne plus serrée : une densité $q_x(z)$ par observation.</li>
+<li>Un encodeur partagé apprend $x\mapsto q_\phi(\cdot\mid x)$, ce qui évite une optimisation séparée pour chaque observation.</li>
+<li>Pour $\theta$ fixé, on apprend $\phi$ en maximisant $\mathcal L(x,\theta,\phi) := \mathcal L(x,\theta;q_\phi(\cdot\mid x))$. Cela ajuste $q_\phi(z\mid x)$ à $p_\theta(z\mid x)$ <b>sans évaluer</b> $p_\theta(z\mid x)$ (c'est l'encadré « en une phrase » du §4).</li>
+</ul>
+</div>
+<div class="box def"><div class="box-title">Encodeur : loi a posteriori approchée gaussienne (slide 19)</div>
+L'<b>encodeur</b> $f_\phi$ envoie $x$ sur la moyenne et les log-écart-types de $q_\phi(z\mid x)$ :
+$$f_\phi(x) = \begin{pmatrix}\mu_{z\mid x}\\ \ln\sigma_{z\mid x}\end{pmatrix},\qquad q_\phi(z\mid x) = \N\big(z;\ \mu_{z\mid x},\ \mathrm{diag}(\sigma_{z\mid x}^2)\big).$$
+<ul>
+<li>Les log-écart-types sont libres ; on applique $\exp$ coordonnée par coordonnée pour obtenir $\sigma_{z\mid x}>0$.</li>
+<li>La forme gaussienne est un <b>choix de modélisation</b> : la vraie loi a posteriori n'a pas besoin d'être gaussienne (§4).</li>
+<li>Avec l'a priori gaussien, $\mathrm{KL}(q_\phi(z\mid x)\,\|\,p(z))$ a une forme close (§6).</li>
+</ul>
+</div>
+<div class="box def"><div class="box-title">Autoencodeur variationnel — VAE (slide 20)</div>
+<b>Pourquoi ce nom ?</b> <em>Variationnel</em> : on apprend une loi a posteriori approchée $q_\phi(z\mid x)$ en maximisant l'ELBO (optimiser sur des lois, c'est du « calcul des variations »). <em>Autoencodeur</em> : un encodeur et un décodeur probabilistes apprennent à reconstruire l'entrée $x$.
+$$x\ \xrightarrow{\ \text{encodeur }q_\phi(z\mid x)\ }\ z\ \xrightarrow{\ \text{décodeur }p_\theta(x\mid z)\ }\ x$$
+<ul>
+<li><b>Génération</b> (décodeur seul) : tirer $z\sim p(z)$, puis $x\sim p_\theta(x\mid z)$.</li>
+<li><b>Entraînement</b> (encodeur et décodeur) : étant donné $x$, tirer $z\sim q_\phi(z\mid x)$ et évaluer $p_\theta(x\mid z)$. On maximise l'ELBO <b>conjointement</b> en $\phi$ (encodeur) et $\theta$ (décodeur).</li>
+</ul>
+</div>
+<div class="box thm"><div class="box-title">Objectif du VAE et réécriture de l'ELBO (slide 21)</div>
+$$\arg\max_{\theta,\phi}\ \sum_{i=1}^N\mathcal L(x^{(i)},\theta,\phi),\qquad \mathcal L(x,\theta,\phi) = \underbrace{\E_{z\sim q_\phi(\cdot\mid x)}\big[\log p_\theta(x\mid z)\big]}_{\text{reconstruction}}\ -\ \underbrace{\mathrm{KL}\big(q_\phi(z\mid x)\,\|\,p(z)\big)}_{\text{régularisation}}.$$
+</div>
+<details class="proof" open><summary>Preuve — étape par étape</summary>
+<div class="proof-body">
+<div class="step"><b>① Factoriser la jointe.</b> Pour $z\sim q_\phi(\cdot\mid x)$, on utilise $p_\theta(x,z) = p_\theta(x\mid z)\,p(z)$ :
+$$\log\frac{p_\theta(x,z)}{q_\phi(z\mid x)} = \log p_\theta(x\mid z)+\log\frac{p(z)}{q_\phi(z\mid x)} = \log p_\theta(x\mid z)-\log\frac{q_\phi(z\mid x)}{p(z)}.$$</div>
+<div class="step"><b>② Prendre l'espérance (linéarité).</b>
+$$\mathcal L(x,\theta,\phi) = \E_z\big[\log p_\theta(x\mid z)\big]-\E_z\Big[\log\frac{q_\phi(z\mid x)}{p(z)}\Big],$$
+et le second terme est, par définition, $\mathrm{KL}(q_\phi(z\mid x)\,\|\,p(z))$.</div>
+<div class="qed">∎</div>
+</div></details>
+<details class="objs" open><summary>Les deux termes</summary><dl>
+<dt>$\E_z[\log p_\theta(x\mid z)]$</dt><dd><span class="ty">reconstruction</span>Le maximiser encourage une meilleure reconstruction : les $z$ tirés de l'encodeur doivent permettre au décodeur de retrouver $x$. Avec $p_\theta(x\mid z)$ gaussienne de $\sigma$ fixé, c'est $-\frac1{2\sigma^2}\E\|x-\mu_\theta(z)\|^2$ + constante : l'erreur quadratique de l'autoencodeur du §1.</dd>
+<dt>$\mathrm{KL}(q_\phi(z\mid x)\,\|\,p(z))$</dt><dd><span class="ty">régularisation</span>La minimiser rapproche la postérieure approchée de l'a priori : les codes ne doivent pas s'éloigner de $\N(0,I)$, ni devenir trop précis ($\sigma_{z\mid x}\to0$ coûte cher). C'est ce qui rend l'échantillonnage $z\sim p(z)$ pertinent après l'entraînement.</dd>
+</dl></details>
+<div class="box warn"><div class="box-title">Deux défis restants (slide 21)</div>
+<ol>
+<li><b>Calculer les espérances</b> sous $q_\phi(z\mid x)$ : l'intégrale de reconstruction n'a pas de forme close ;</li>
+<li><b>calculer les gradients</b>, surtout par rapport aux paramètres $\phi$ de l'encodeur, dont dépend la loi des échantillons.</li>
+</ol>
+</div>
+
+<!-- ===================================================================== -->
+<h2 id="grad"><span class="num">6</span>Calculer l'ELBO et ses gradients</h2>
+<div class="sources"><a class="src slides" href="../Slides/8-vae.pdf#page=22" target="_blank">Slides p.22–25</a><a class="src book" href="../Textbooks/Deep%20Learning%20-%20Foundations%20and%20Concepts.pdf#page=585" target="_blank">DL §19.2.2</a></div>
+<div class="box road"><div class="box-title">Où on en est</div><div class="road-row"><span class="rk ok">Acquis</span><div>L'objectif : reconstruction − KL, à maximiser en $\theta$ et $\phi$.</div></div><div class="road-row"><span class="rk q">Il manque</span><div>Une estimation de l'espérance, et un gradient correct par rapport à l'encodeur.</div></div><div class="road-row"><span class="rk go">Cette partie</span><div>Monte-Carlo (sans biais, preuve) ; pourquoi le gradient naïf en $\phi$ est nul ; l'astuce de reparamétrisation (preuve) ; la KL gaussienne en forme close (preuve).</div></div></div>
+<div class="vids"><div class="vids-title">▶ Vidéos<span>en anglais · s'ouvrent sur YouTube</span></div><div class="vids-grid"><a class="vid" href="https://www.youtube.com/watch?v=vy8q-WnHa9A" target="_blank" rel="noopener"><span class="vid-thumb">▶<img src="https://i.ytimg.com/vi/vy8q-WnHa9A/mqdefault.jpg" loading="lazy" alt="" onerror="this.remove()"></span><span class="vid-body"><span class="vid-ch">ML &amp; DL Explained</span><span class="vid-t" style="display:block">The Reparameterization Trick</span><span class="vid-why" style="display:block">Pourquoi on ne peut pas dériver « à travers un tirage », et comment la reparamétrisation contourne le problème.</span></span></a></div></div>
+
+<div class="box def"><div class="box-title">Estimation Monte-Carlo (slide 22)</div>
+Avec $K$ échantillons indépendants $z^{(k)}\sim q_\phi(\cdot\mid x)$, on moyenne les log-densités :
+$$\E_{z\sim q_\phi(\cdot\mid x)}\big[\log p_\theta(x\mid z)\big] = \int q_\phi(z\mid x)\log p_\theta(x\mid z)\,dz\ \approx\ \hat R_K := \frac1K\sum_{k=1}^K\log p_\theta(x\mid z^{(k)}).$$
+Avec un décodeur non linéaire, l'intégrale n'a pas de forme close. Pour chaque échantillon, l'encodeur sert à tirer $z^{(k)}$ et le décodeur à évaluer $\log p_\theta(x\mid z^{(k)})$ ; les choix gaussiens rendent les deux opérations faciles. Pour $\theta,\phi$ fixés, la moyenne empirique est un estimateur <b>sans biais</b> dès que l'espérance est finie.
+</div>
+<details class="proof"><summary>Preuve : sans biais, et variance en $1/K$ <span class="hint">hors slides pour la variance</span></summary>
+<div class="proof-body">
+<div class="step"><b>① Sans biais.</b> Par linéarité de l'espérance, et parce que chaque $z^{(k)}$ suit $q_\phi(\cdot\mid x)$ : $\E[\hat R_K] = \frac1K\sum_k\E\big[\log p_\theta(x\mid z^{(k)})\big] = \frac1K\cdot K\cdot\E_{z\sim q_\phi}[\log p_\theta(x\mid z)]$.</div>
+<div class="step"><b>② Variance.</b> Si $v = \Var_{z\sim q_\phi}[\log p_\theta(x\mid z)]$ est finie, l'indépendance des $z^{(k)}$ donne $\Var[\hat R_K] = \frac1{K^2}\sum_k v = \frac vK$ : l'écart-type décroît en $1/\sqrt K$. En pratique on prend souvent $K = 1$ : le bruit est moyenné au fil des mini-batchs, comme en SGD.</div>
+<div class="qed">∎</div>
+</div></details>
+
+<div class="box def"><div class="box-title">Le problème du gradient (slide 23)</div>
+Pour $x$ fixé, $\hat R_K = \frac1K\sum_k\log p_\theta(x\mid z^{(k)})$ avec $z^{(k)}\overset{\text{i.i.d.}}\sim q_\phi(\cdot\mid x)$.
+<ul>
+<li><b>Décodeur $\theta$</b> : $q_\phi$ ne dépend pas de $\theta$, on fige les échantillons et on dérive : $\nabla_\theta\hat R_K = \frac1K\sum_k\nabla_\theta\log p_\theta(x\mid z^{(k)})$. C'est un estimateur sans biais de $\nabla_\theta\E_{q_\phi}[\log p_\theta(x\mid z)]$ (on peut échanger gradient et espérance : la loi ne bouge pas).</li>
+<li><b>Encodeur $\phi$</b> : si on traite les échantillons comme des constantes, il ne reste aucune dépendance explicite en $\phi$, d'où $\nabla_\phi\hat R_K = 0$. C'est <b>faux</b> : on oublie que la loi $q_\phi(z\mid x)$ des échantillons dépend de $\phi$.</li>
+</ul>
+<b>Question</b> : comment garder la dépendance des échantillons en $\phi$ ?
+</div>
+<div class="box thm"><div class="box-title">Astuce de reparamétrisation (slide 24)</div>
+On tire $z\sim q_\phi(z\mid x) = \N\big(z;\mu_\phi(x),\mathrm{diag}(\sigma_\phi^2(x))\big)$ par
+$$z = \mu_\phi(x)+\sigma_\phi(x)\odot\varepsilon,\qquad\varepsilon\sim\N(0,I).$$
+La loi du bruit ne dépend pas de $\phi$ : on <b>fige $\varepsilon$</b> pendant la rétropropagation, et le gradient passe par $z$ jusqu'à l'encodeur. Pour toute fonction $F$ dérivable :
+$$\nabla_\phi\,\E_{z\sim q_\phi(\cdot\mid x)}\big[F(z)\big] = \E_{\varepsilon\sim\N(0,I)}\Big[\nabla_\phi F\big(\mu_\phi(x)+\sigma_\phi(x)\odot\varepsilon\big)\Big].$$
+</div>
+<details class="proof" open><summary>Preuve — étape par étape</summary>
+<div class="proof-body">
+<div class="step"><b>① Le tirage est correct.</b> Coordonnée par coordonnée, $z_j = \mu_j+\sigma_j\varepsilon_j$ avec $\varepsilon_j\sim\N(0,1)$ indépendants : $z_j\sim\N(\mu_j,\sigma_j^2)$, indépendants. Donc $z\sim\N(\mu,\mathrm{diag}(\sigma^2)) = q_\phi(\cdot\mid x)$ (même argument qu'au §3 pour $\varepsilon_x$).</div>
+<div class="step"><b>② Changer de variable dans l'espérance.</b> Comme $z$ et $\mu_\phi(x)+\sigma_\phi(x)\odot\varepsilon$ ont la même loi,
+$$\E_{z\sim q_\phi}[F(z)] = \E_{\varepsilon\sim\N(0,I)}\big[F(\mu_\phi(x)+\sigma_\phi(x)\odot\varepsilon)\big].$$
+<div class="why">À droite, la loi de la variable aléatoire ($\N(0,I)$) <b>ne dépend plus de $\phi$</b> : $\phi$ n'apparaît plus que dans la fonction intégrée.</div></div>
+<div class="step"><b>③ Dériver sous l'espérance.</b> La loi ne bougeant plus, on peut échanger $\nabla_\phi$ et $\E_\varepsilon$ (sous des hypothèses de régularité standard, vraies pour des réseaux à activations lisses) : on obtient la formule. Concrètement, par la règle de la chaîne, pour la coordonnée $j$ de $z$ :
+$$\frac{\partial F}{\partial\mu_j} = \frac{\partial F}{\partial z_j},\qquad \frac{\partial F}{\partial(\ln\sigma_j)} = \frac{\partial F}{\partial z_j}\cdot\frac{\partial z_j}{\partial\ln\sigma_j} = \frac{\partial F}{\partial z_j}\,\sigma_j\varepsilon_j,$$
+puis la rétropropagation habituelle (chapitre 5) dans l'encodeur, de $(\mu,\ln\sigma)$ jusqu'à $\phi$.</div>
+<div class="step"><b>④ L'estimateur.</b> Avec $K$ bruits $\varepsilon^{(k)}$ : $\frac1K\sum_k\nabla_\phi F(\mu_\phi(x)+\sigma_\phi(x)\odot\varepsilon^{(k)})$ est sans biais (même argument que la preuve Monte-Carlo, appliqué au gradient). Avec $F = \log p_\theta(x\mid\cdot)$, c'est le gradient de $\hat R_K$ en gardant le chemin $\phi\to(\mu,\sigma)\to z$.</div>
+<div class="qed">∎</div>
+</div></details>
+<div class="box intu"><div class="box-title">Une autre solution : l'estimateur du score <span class="hint">hors slides</span></div>
+Sans reparamétriser, on peut dériver la densité elle-même : $\nabla_\phi\E_{q_\phi}[F(z)] = \int F(z)\nabla_\phi q_\phi(z)\,dz = \E_{q_\phi}\big[F(z)\,\nabla_\phi\log q_\phi(z)\big]$ (car $\nabla q = q\,\nabla\log q$). Pour une gaussienne et la dérivée en $\mu$ : $\nabla_\mu\log q = (z-\mu)/\sigma^2$. Cet estimateur (« REINFORCE », il reviendra en apprentissage par renforcement) est sans biais et marche même si $F$ n'est pas dérivable, mais il est en général bien plus <b>bruité</b> : il n'utilise que les valeurs $F(z)$, pas leur pente. La scène compare les deux.
+</div>
+<div data-scene="vae-mc"></div>
+
+<div class="box thm"><div class="box-title">Le terme KL en forme close (slide 25)</div>
+Pour $q_\phi(z\mid x) = \N(z;\mu,\mathrm{diag}(\sigma^2))$ et $p(z) = \N(z;0,I)$, avec $\mu = \mu_\phi(x)$ et $\sigma = \sigma_\phi(x)$ dans $\R^J$ :
+$$\mathrm{KL}\big(q_\phi(z\mid x)\,\|\,p(z)\big) = \frac12\sum_{j=1}^J\big(\mu_j^2+\sigma_j^2-1-2\ln\sigma_j\big).$$
+Les deux espérances gaussiennes de la définition ont une forme close : on évalue la KL directement à partir des sorties de l'encodeur, <b>sans échantillonner</b>, et on la dérive directement pour rétropropager dans l'encodeur.
+</div>
+<details class="proof" open><summary>Preuve — étape par étape</summary>
+<div class="proof-body">
+<div class="step"><b>① Se ramener à une dimension.</b> $q$ et $p$ ont des covariances diagonales, donc se factorisent : $q(z) = \prod_jq_j(z_j)$ avec $q_j = \N(\mu_j,\sigma_j^2)$, et $p(z) = \prod_j\N(z_j;0,1)$. Le log d'un produit est une somme, et chaque terme ne dépend que de $z_j$ :
+$$\mathrm{KL}(q\|p) = \E_q\Big[\sum_j\log\frac{q_j(z_j)}{p_j(z_j)}\Big] = \sum_j\E_{z_j\sim q_j}\Big[\log\frac{q_j(z_j)}{p_j(z_j)}\Big] = \sum_j\mathrm{KL}(q_j\|p_j).$$</div>
+<div class="step"><b>② Les deux log-densités en dimension 1.</b>
+$$\log q_j(z) = -\tfrac12\log(2\pi)-\ln\sigma_j-\frac{(z-\mu_j)^2}{2\sigma_j^2},\qquad \log p_j(z) = -\tfrac12\log(2\pi)-\frac{z^2}2.$$</div>
+<div class="step"><b>③ Les deux espérances sous $z\sim\N(\mu_j,\sigma_j^2)$.</b> $\E\big[(z-\mu_j)^2\big] = \sigma_j^2$ (définition de la variance), et $\E[z^2] = \Var(z)+(\E z)^2 = \sigma_j^2+\mu_j^2$. Donc
+$$\E_{q_j}[\log q_j] = -\tfrac12\log(2\pi)-\ln\sigma_j-\tfrac12,\qquad \E_{q_j}[\log p_j] = -\tfrac12\log(2\pi)-\tfrac12(\sigma_j^2+\mu_j^2).$$</div>
+<div class="step"><b>④ Soustraire.</b> Les $\log(2\pi)$ se simplifient :
+$$\mathrm{KL}(q_j\|p_j) = -\ln\sigma_j-\tfrac12+\tfrac12(\sigma_j^2+\mu_j^2) = \tfrac12\big(\mu_j^2+\sigma_j^2-1-2\ln\sigma_j\big).$$
+On somme sur $j$ avec ①.</div>
+<div class="step"><b>⑤ Contrôle.</b> Le terme $\mu_j^2\ge0$ s'annule en $\mu_j = 0$ ; le terme $s(\sigma) = \sigma^2-1-2\ln\sigma$ a pour dérivée $2\sigma-2/\sigma$, nulle en $\sigma = 1$ où $s(1) = 0$, et $s$ est convexe : $s\ge0$. On retrouve $\mathrm{KL}\ge0$, nulle seulement si $q = p$. Et les gradients pour la rétropropagation : $\frac{\partial\,\mathrm{KL}}{\partial\mu_j} = \mu_j$, $\frac{\partial\,\mathrm{KL}}{\partial\ln\sigma_j} = \sigma_j^2-1$.</div>
+<div class="qed">∎</div>
+</div></details>
+<div data-scene="vae-kl"></div>
+
+<!-- ===================================================================== -->
+<h2 id="train"><span class="num">7</span>Entraîner le VAE, puis générer</h2>
+<div class="sources"><a class="src slides" href="../Slides/8-vae.pdf#page=26" target="_blank">Slides p.26–27</a><a class="src book" href="../Textbooks/Deep%20Learning%20-%20Foundations%20and%20Concepts.pdf#page=580" target="_blank">DL §19.2</a></div>
+<div class="box road"><div class="box-title">Où on en est</div><div class="road-row"><span class="rk ok">Acquis</span><div>Toutes les pièces : estimation Monte-Carlo, gradient par reparamétrisation, KL exacte.</div></div><div class="road-row"><span class="rk q">Il manque</span><div>Les assembler en un algorithme, et voir ce qu'il produit.</div></div><div class="road-row"><span class="rk go">Cette partie</span><div>L'objectif stochastique, les trois étapes d'une itération, la génération ; un VAE entraîné en direct, comparé à un autoencodeur.</div></div></div>
+<div class="vids"><div class="vids-title">▶ Vidéos<span>en anglais · s'ouvrent sur YouTube</span></div><div class="vids-grid"><a class="vid" href="https://www.youtube.com/watch?v=5WoItGTWV54" target="_blank" rel="noopener"><span class="vid-thumb">▶<img src="https://i.ytimg.com/vi/5WoItGTWV54/mqdefault.jpg" loading="lazy" alt="" onerror="this.remove()"></span><span class="vid-body"><span class="vid-ch">Stanford University (CS231n)</span><span class="vid-t" style="display:block">Lecture 13 | Generative Models</span><span class="vid-why" style="display:block">Cours complet sur les modèles génératifs, avec une grande partie sur le VAE et ses échantillons.</span></span></a><a class="vid" href="https://www.youtube.com/watch?v=7Pcvdo4EJeo" target="_blank" rel="noopener"><span class="vid-thumb">▶<img src="https://i.ytimg.com/vi/7Pcvdo4EJeo/mqdefault.jpg" loading="lazy" alt="" onerror="this.remove()"></span><span class="vid-body"><span class="vid-ch">Google DeepMind × UCL</span><span class="vid-t" style="display:block">Deep Learning Lectures 11/12: Modern Latent Variable Models</span><span class="vid-why" style="display:block">Pour aller plus loin : modèles à variables latentes, inférence variationnelle, gradients.</span></span></a></div></div>
+
+<div class="box thm"><div class="box-title">Objectif ELBO stochastique (slide 26)</div>
+On entraîne $\theta$ et $\phi$ en maximisant la somme des ELBO estimées sur les observations :
+$$\hat{\mathcal L}_K(x,\theta,\phi) := \frac1K\sum_{k=1}^K\log p_\theta(x\mid z^{(k)})-\mathrm{KL}\big(q_\phi(z\mid x)\,\|\,p(z)\big),\qquad z^{(k)} = \mu_\phi(x)+\sigma_\phi(x)\odot\varepsilon^{(k)},\ \ \varepsilon^{(k)}\overset{\text{i.i.d.}}\sim\N(0,I).$$
+Une itération :
+<ol>
+<li><b>Encoder et tirer</b> : calculer $\mu_\phi(x)$ et $\ln\sigma_\phi(x)$, puis générer $K$ échantillons latents par reparamétrisation ;</li>
+<li><b>évaluer</b> : moyenner les log-densités du décodeur (terme de reconstruction) et calculer la KL gaussienne en forme close ;</li>
+<li><b>mettre à jour</b> : rétropropager, et mettre à jour conjointement $\theta$ (décodeur) et $\phi$ (encodeur) par montée de gradient stochastique.</li>
+</ol>
+Le terme de reconstruction entraîne les <b>deux</b> réseaux ; le terme KL n'entraîne que l'<b>encodeur</b> (il ne dépend pas de $\theta$).
+</div>
+<details class="proof"><summary>Pourquoi $\hat{\mathcal L}_K$ est un bon objectif — l'estimateur et son gradient sont sans biais</summary>
+<div class="proof-body">
+<div class="step"><b>① Valeur.</b> Le terme KL est exact ; le terme de reconstruction est une moyenne Monte-Carlo sans biais (§6). Donc $\E_\varepsilon[\hat{\mathcal L}_K] = \mathcal L(x,\theta,\phi)$.</div>
+<div class="step"><b>② Gradient en $\theta$.</b> $\nabla_\theta\hat{\mathcal L}_K = \frac1K\sum_k\nabla_\theta\log p_\theta(x\mid z^{(k)})$, d'espérance $\nabla_\theta\mathcal L$ (la loi de $z$ ne dépend pas de $\theta$).</div>
+<div class="step"><b>③ Gradient en $\phi$.</b> Par la reparamétrisation, $\E_\varepsilon\big[\nabla_\phi\frac1K\sum_k\log p_\theta(x\mid z^{(k)})\big] = \nabla_\phi\E_{q_\phi}[\log p_\theta(x\mid z)]$ ; le gradient de la KL est exact.</div>
+<div class="step"><b>④ Sur un mini-batch.</b> En tirant les $x$ au hasard, la moyenne des $\nabla\hat{\mathcal L}_K$ est un gradient stochastique sans biais de $\frac1N\sum_n\mathcal L(x_n,\theta,\phi)$ : c'est le cadre de la SGD du chapitre 1.</div>
+<div class="qed">∎</div>
+</div></details>
+
+<div class="box def"><div class="box-title">Générer avec le VAE (slide 27)</div>
+On utilise le décodeur seul, avec $z$ tiré de l'a priori $\N(0,I)$. Les exemples de Kingma &amp; Welling (2014) avec $z\in\R^2$ montrent la variété apprise : en parcourant une grille de $z$, les visages (Frey Face) ou les chiffres (MNIST) changent <b>continûment</b>. Des $z$ proches donnent des $x$ proches ; sur les visages, $z_1$ correspond à peu près à l'orientation de la tête et $z_2$ au sourire.
+</div>
+<p>La scène entraîne un vrai VAE ($x\in\R^2$, $z\in\R$, encodeur et décodeur à 24 neurones $\tanh$) avec exactement l'objectif ci-dessus, $K = 1$. Compare les trois objectifs : VAE complet, VAE sans terme KL, autoencodeur déterministe. Regarde surtout les points roses, générés en tirant $z\sim\N(0,1)$.</p>
+<div data-scene="vae-train"></div>
+<div class="box intu"><div class="box-title">Ce qu'il faut voir dans la scène</div>
+<ul>
+<li><b>Le rôle du terme KL.</b> Avec la KL, la moyenne des encodages $\frac1N\sum_nq_\phi(z\mid x_n)$ (courbe blanche) colle à $\N(0,1)$ : les $z$ tirés de l'a priori tombent là où le décodeur a été entraîné, et les points générés ressemblent aux données. Sans la KL, les codes dérivent et la génération se dégrade.</li>
+<li><b>Le compromis.</b> Chaque $q_\phi(z\mid x)$ reste une petite gaussienne (pas un point) : le décodeur doit être robuste à un peu de bruit sur $z$, ce qui rend l'espace latent « lisse » (des $z$ voisins donnent des $x$ voisins, comme sur la slide 27).</li>
+<li><b>La courbe colorée</b> $z\mapsto\mu_\theta(z)$ est la variété apprise. Ses couleurs suivent $z$ : les données sont « paramétrées » par une seule coordonnée, comme le visage par l'orientation et le sourire.</li>
+</ul></div>
+<div class="box intu"><div class="box-title">Remarques <span class="hint">hors slides</span></div>
+<ul>
+<li><b>$\sigma_{x\mid z}$ règle le compromis.</b> Avec une gaussienne de variance $\sigma^2$ fixée, le terme de reconstruction vaut $-\frac1{2\sigma^2}\|x-\mu_\theta(z)\|^2$ + constante : un petit $\sigma$ donne beaucoup de poids à la reconstruction face à la KL. Les variantes « $\beta$-VAE » multiplient la KL par $\beta$ pour régler ce compromis explicitement.</li>
+<li><b>Effondrement de la postérieure.</b> Si le décodeur est assez puissant pour modéliser $x$ sans regarder $z$, l'optimum peut mettre $q_\phi(z\mid x) = p(z)$ (KL nulle) : $z$ ne porte plus d'information. C'est une difficulté classique des VAE avec des décodeurs très expressifs.</li>
+<li><b>Échantillons flous.</b> Sur des images, un VAE gaussien produit souvent des images un peu floues : la moyenne $\mu_\theta(z)$ d'une gaussienne « moyenne » plusieurs détails possibles.</li>
+</ul></div>
+
+<!-- ===================================================================== -->
+<h2 id="summary"><span class="num">8</span>Résumé &amp; questions des slides</h2>
+<div class="box thm"><div class="box-title">Tout le chapitre en une chaîne</div>
+$$\underbrace{\min_{f,g}\tfrac1N\textstyle\sum_n\|x_n-g(f(x_n))\|^2}_{\text{§1 : AE (linéaire = ACP)}}\ \to\ \underbrace{\max_\theta\textstyle\sum_n\log p_\theta(x_n)}_{\text{§2}}\ \to\ \underbrace{p_\theta(x) = \textstyle\int p(z)p_\theta(x\mid z)dz}_{\text{§3 : intraitable}}$$
+$$\to\ \underbrace{\log p_\theta(x) = \mathcal L(x,\theta;q)+\mathrm{KL}(q\|p_\theta(z\mid x))}_{\text{§4}}\ \to\ \underbrace{\mathcal L = \E_{q_\phi}[\log p_\theta(x\mid z)]-\mathrm{KL}(q_\phi\|p)}_{\text{§5 : VAE}}\ \to\ \underbrace{z = \mu_\phi+\sigma_\phi\odot\varepsilon,\ \ \mathrm{KL} = \tfrac12\textstyle\sum_j(\mu_j^2+\sigma_j^2-1-2\ln\sigma_j)}_{\text{§6–7}}$$
+</div>
+<div class="box def"><div class="box-title">Autoencodeur ou autoencodeur variationnel ? (slide 29)</div>
+<div class="notation-wrap"><table class="notation">
+<thead><tr><th></th><th>Autoencodeur</th><th>Autoencodeur variationnel</th></tr></thead>
+<tbody>
+<tr><td><b>Encodeur</b></td><td>$z = f_\phi(x)$ : un <b>point</b></td><td>$z\sim q_\phi(z\mid x)$ : une <b>loi</b></td></tr>
+<tr><td><b>Objectif</b></td><td>perte de reconstruction</td><td>reconstruction et terme KL (l'ELBO)</td></tr>
+<tr><td><b>Génération</b></td><td>pas d'a priori spécifié pour tirer $z$</td><td>$z\sim p(z)$, puis $x\sim p_\theta(x\mid z)$</td></tr>
+</tbody></table></div>
+<b>Différence clé</b> : un AE encode chaque entrée comme un point, alors qu'un VAE l'encode comme une loi qui permet l'échantillonnage. Le terme KL relie $q_\phi(z\mid x)$ à l'a priori $p(z)$, ce qui donne un sens à l'échantillonnage latent.
+</div>
+<div class="box intu"><div class="box-title">Conclusion (slide 30)</div>
+Un <b>AE</b> réduit la dimension. Un <b>VAE</b> estime une densité de probabilité. Un VAE maximise l'<b>ELBO</b> pour apprendre un générateur.
+</div>
+<div class="box q"><div class="box-title">Qu'est-ce que l'ELBO, et pourquoi la maximise-t-on ? (slide 30)</div>
+<details class="proof"><summary>Réponse</summary><div class="proof-body"><p>C'est $\mathcal L(x,\theta;q) = \E_{z\sim q}\big[\log\frac{p_\theta(x,z)}{q(z)}\big]$, une borne inférieure de la log-vraisemblance $\log p_\theta(x)$ (Jensen, §4). On voudrait maximiser $\log p_\theta(x)$ (maximum de vraisemblance, §2), mais c'est une intégrale intraitable. L'ELBO, elle, s'estime sans biais avec des échantillons de $q$, et son écart à $\log p_\theta(x)$ vaut exactement $\mathrm{KL}(q\,\|\,p_\theta(z\mid x))$. La maximiser fait donc deux choses à la fois : en $\theta$, elle pousse la vraisemblance vers le haut (via sa borne) ; en $\phi$, elle rapproche l'encodeur de la vraie loi a posteriori, ce qui resserre la borne.</p></div></details></div>
+<div class="box q"><div class="box-title">Qu'est-ce que l'astuce de reparamétrisation, et pourquoi l'utilise-t-on ? (slide 30)</div>
+<details class="proof"><summary>Réponse</summary><div class="proof-body"><p>C'est écrire le tirage $z\sim\N(\mu_\phi(x),\mathrm{diag}(\sigma_\phi^2(x)))$ comme $z = \mu_\phi(x)+\sigma_\phi(x)\odot\varepsilon$, avec $\varepsilon\sim\N(0,I)$ indépendant de $\phi$ (§6). Sans elle, si l'on fige les échantillons, le gradient de l'estimation Monte-Carlo par rapport à l'encodeur vaut 0, alors que la vraie dérivée ne l'est pas : la dépendance en $\phi$ passe par la loi des échantillons. Avec elle, $z$ devient une fonction dérivable de $\phi$ (à $\varepsilon$ fixé), la rétropropagation traverse $z$, et le gradient obtenu est sans biais et peu bruité.</p></div></details></div>
+<div class="box q"><div class="box-title">Pourquoi ne pas simplement entraîner un autoencodeur puis tirer des codes au hasard ? (slides 5, 29)</div>
+<details class="proof"><summary>Réponse</summary><div class="proof-body"><p>Parce que rien ne dit <b>où</b> tirer : les codes d'un autoencodeur occupent une région arbitraire (échelle, position, trous entre les groupes), et le décodeur n'a été entraîné que sur ces codes-là. Un $z$ tiré ailleurs peut donner n'importe quoi. Le VAE fixe une loi $p(z)$ et force, par le terme KL, les encodages à la remplir ; il entraîne aussi le décodeur sur des $z$ bruités, donc sur un voisinage de chaque code (scène du §7, mode « autoencodeur »).</p></div></details></div>
+<div class="box q"><div class="box-title">Pourquoi un encodeur partagé plutôt qu'un $q_x$ optimisé pour chaque $x$ ? (slide 18)</div>
+<details class="proof"><summary>Réponse</summary><div class="proof-body"><p>Optimiser un $q_x$ par donnée demande une boucle d'optimisation par observation, à refaire à chaque mise à jour de $\theta$, et encore pour toute nouvelle donnée. Un encodeur calcule $q_\phi(\cdot\mid x)$ en une passe avant, pour toutes les données, et généralise aux nouvelles : le coût de l'inférence est « amorti » sur l'entraînement. Le prix : $q_\phi(\cdot\mid x)$ peut être un peu moins bon que le meilleur $q_x$ (un écart d'amortissement, en plus de l'écart dû à la forme gaussienne).</p></div></details></div>
+<hr>
+<p class="c-dim" style="font-size:13px">Pour s'entraîner : <a href="exercises.html">exercices à trous</a> (filtre « 7 · VAE »).</p>
+
+</div></main>
+</div>
+
+<script src="lib/katex/katex.min.js"></script>
+<script src="lib/katex/contrib/auto-render.min.js"></script>
+<script src="lib/three.min.js"></script>
+<script src="js/core/math.js"></script>
+<script src="js/core/plot2d.js"></script>
+<script src="js/core/scene3d.js"></script>
+<script src="js/core/ui.js"></script>
+<script src="js/vae/v0-common.js"></script>
+<script src="js/vae/v1-ae.js"></script>
+<script src="js/vae/v2-latent.js"></script>
+<script src="js/vae/v3-train.js"></script>
+<script>ML.page.boot();</script>
+</body>
+</html>
