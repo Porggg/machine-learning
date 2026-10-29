@@ -1,0 +1,627 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Transformers — Cours interactif ML</title>
+<link rel="stylesheet" href="lib/katex/katex.min.css">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <a class="brand" href="index.html"><span class="pi">∇</span>ML · POSTECH</a>
+  <nav>
+    <a href="index.html">Accueil</a>
+    <a href="linear-regression.html">1 · Régression linéaire</a>
+    <a href="logistic-regression.html">2 · Régression logistique</a>
+    <a href="svm.html">3 · SVM</a>
+    <a href="model-selection.html">4 · Sélection de modèle</a>
+    <a href="neural-networks.html">5 · Réseaux de neurones</a>
+    <a href="online-learning.html">6 · Apprentissage en ligne</a>
+    <a href="vae.html">7 · VAE</a>
+    <a href="transformers.html" class="active">8 · Transformers</a>
+    <a href="exercises.html">Entraînement</a>
+    <a class="local-only" href="homework.html">Devoirs</a>
+  </nav>
+</header>
+
+<div class="layout">
+<aside class="sidebar">
+  <h4>Sommaire</h4>
+  <div class="toc"></div>
+  <div class="legend">
+    <h4>Sources</h4>
+    <div><span class="src slides">Slides</span> au programme (slides du cours)</div>
+    <div><span class="src book">PRML / DL</span> manuel de référence (lien → page)</div>
+    <div><span class="src extra">Hors slides</span> complément, pas dans les slides</div>
+  </div>
+</aside>
+
+<main class="content"><div class="content-inner">
+
+<h1>Transformers et prédiction du token suivant<span class="sub">Density Estimation via Transformers — attention · couche de transformer · décodeur · auto-supervision · Cours 18–19 (11/5, 11/10)</span></h1>
+<div class="sources">
+  <a class="src slides" href="../Slides/9-transformers.pdf" target="_blank">Slides 9-transformers (26 p.)</a>
+  <a class="src book" href="../Textbooks/Deep%20Learning%20-%20Foundations%20and%20Concepts.pdf#page=373" target="_blank">DL ch. 12 Transformers p.373</a>
+  <a class="src book" href="../Textbooks/Deep%20Learning%20-%20Foundations%20and%20Concepts.pdf#page=374" target="_blank">DL §12.1 Attention</a>
+  <a class="src book" href="../Textbooks/Deep%20Learning%20-%20Foundations%20and%20Concepts.pdf#page=399" target="_blank">DL §12.3.1 Decoder transformers</a>
+</div>
+
+<p>Le chapitre 7 estimait la loi d'une donnée $x\in\R^D$ avec une variable latente. Ce chapitre estime la loi d'une <b>séquence</b> de tokens $x_1,\dots,x_N$ (des mots, des morceaux de mots, des pixels…), et c'est ce que fait un modèle de langage. L'idée tient en une ligne : la loi jointe se factorise en lois conditionnelles $p(x_n\mid x_1,\dots,x_{n-1})$, et il suffit d'apprendre à <b>prédire le token suivant</b>. Toute la difficulté est l'architecture qui calcule ces conditionnelles : elle doit pouvoir aller chercher une information loin dans le passé, avoir un nombre de paramètres qui ne dépend pas de la longueur, et s'entraîner en parallèle. Le <b>transformer</b> répond aux trois avec un seul mécanisme, l'<b>attention</b>. Au début de chaque section, un encadré <span class="c-teal"><b>Où on en est</b></span> fait le point.</p>
+
+<h2 id="roadmap">Feuille de route</h2>
+<div class="sources"><a class="src slides" href="../Slides/9-transformers.pdf#page=2" target="_blank">Slide p.2 (plan)</a></div>
+<p>Les slides suivent une construction par étapes : chaque version du mécanisme d'attention corrige un défaut (✗) de la précédente. La chaîne complète, cliquable :</p>
+<div class="flow">
+<a class="st" href="#ntp"><b>① Le problème · §1</b>$p(x_1,\dots,x_N) = \prod_n p(x_n\mid x_{\lt n})$<i>un modèle de Markov oublie le passé lointain</i></a><div class="ar">→</div>
+<a class="st" href="#attention"><b>② Attention · §2</b>$y_n = \sum_m a_{nm}x_m$<i>coefficients adaptatifs : $\mathrm{Softmax}[XX^\top]X$</i></a><div class="ar">→</div>
+<a class="st" href="#qkv"><b>③ Paramètres · §3</b>$\mathrm{Softmax}\big[QK^\top/\sqrt{D_k}\big]V$<i>requêtes, clés, valeurs ; plusieurs têtes</i></a><div class="ar">→</div>
+<a class="st" href="#layer"><b>④ La couche · §4</b>attention + MLP + résidus + LayerNorm<i>entrée et sortie de même taille : on empile</i></a><div class="ar">→</div>
+<a class="st" href="#order"><b>⑤ L'ordre · §5</b>$\mathrm{TL}[PX] = P\,\mathrm{TL}[X]$<i>équivariance (preuve), puis $\tilde x_n = x_n+r_n$</i></a><div class="ar">→</div>
+<a class="st" href="#decoder"><b>⑥ Décodeur · §6</b>attention masquée, sortie linéaire + softmax<i>la sortie $n$ ne voit que le passé</i></a><div class="ar">→</div>
+<a class="st goal" href="#ssl"><b>⑦ Apprendre · §7</b>prédiction du token suivant<i>= classification = maximum de vraisemblance</i></a>
+</div>
+
+<h3 id="roadmap-why">Le raisonnement, maillon par maillon</h3>
+<ol class="plan">
+<li><span class="n">①</span><b>Une séquence, c'est une suite de prédictions.</b> La règle de la chaîne écrit la loi jointe comme un produit de lois du token suivant. <span class="why">Modéliser $p(x_n\mid x_1,\dots,x_{n-1})$ pour tout $n$, c'est donc estimer la densité des séquences. Un modèle de Markov tronque le contexte à $L$ tokens : sa table explose en $|\mathcal V|^L$ et il ne voit rien au-delà.</span></li>
+<li><span class="n">②</span><b>Aller chercher l'information là où elle est.</b> La nouvelle représentation $y_n$ d'un token est une moyenne pondérée de tous les tokens, avec des poids $a_{nm}\ge0$ de somme 1. <span class="why">Avec $a_{nm} = \mathrm{softmax}_m(x_n^\top x_m)$, les poids dépendent des données : « bank » regarde « river » parce que leurs vecteurs se ressemblent, quelle que soit la distance qui les sépare.</span></li>
+<li><span class="n">③</span><b>Rendre l'attention apprenable.</b> On transforme les tokens par trois matrices apprises : requêtes $Q$, clés $K$, valeurs $V$. <span class="why">Requêtes et clés séparées donnent des scores non symétriques ; diviser par $\sqrt{D_k}$ empêche le softmax de saturer ; plusieurs têtes regardent plusieurs choses à la fois.</span></li>
+<li><span class="n">④</span><b>Une couche complète.</b> Après l'attention (qui mélange les tokens), un MLP transforme chaque token séparément ; des connexions résiduelles et une normalisation stabilisent l'ensemble. <span class="why">La sortie a la même forme $N\times D$ que l'entrée : on peut empiler autant de couches qu'on veut.</span></li>
+<li><span class="n">⑤</span><b>Le problème de l'ordre.</b> Les mêmes poids s'appliquent à toutes les positions, donc permuter les tokens permute simplement les sorties. <span class="why">« The food was bad, not good » et « …good, not bad » contiennent les mêmes tokens : il faut injecter la position, en ajoutant un vecteur $r_n$ à chaque token.</span></li>
+<li><span class="n">⑥</span><b>Un décodeur pour générer.</b> On décale la séquence d'un cran (token ⟨start⟩) et on masque l'attention vers le futur. <span class="why">La sortie $n$ ne dépend alors que de $x_1,\dots,x_{n-1}$ : c'est une vraie loi conditionnelle, et une seule passe calcule les $N$ prédictions en parallèle.</span></li>
+<li><span class="n">⑦</span><b>Apprendre sans étiquettes.</b> La cible de chaque position est le token suivant, lu dans le texte lui-même (apprentissage auto-supervisé). <span class="why">Chaque prédiction est une classification à $|\mathcal V|$ classes avec l'entropie croisée, et leur somme est exactement $-\log p_\theta(x_1,\dots,x_T)$ : on fait du maximum de vraisemblance.</span></li>
+</ol>
+
+<div class="box intu"><div class="box-title">À la fin du chapitre, tu dois savoir…</div>
+<ul>
+<li>écrire et <b>démontrer</b> la factorisation $p(x_1,\dots,x_N) = \prod_np(x_n\mid x_1,\dots,x_{n-1})$, et dire ce que le modèle de Markov y change ;</li>
+<li>écrire les cinq versions de l'attention des slides, et pour chacune son avantage (✓) et son défaut (✗) ;</li>
+<li>donner les dimensions de $X, Q, K, V, W^{(q)}, W^{(k)}, W^{(v)}, W^{(o)}$ et de $\mathrm{Softmax}[QK^\top]$ ;</li>
+<li><b>démontrer</b> que les scores $XUU^\top X^\top$ sont symétriques, et que $\mathrm{Var}(q^\top k) = D_k$ sous l'hypothèse d'indépendance ;</li>
+<li>écrire une couche de transformer ($Z = \mathrm{LayerNorm}[Y(X)+X]$, $\tilde X = \mathrm{LayerNorm}[\mathrm{MLP}[Z]+Z]$) et le rôle de chaque morceau ;</li>
+<li><b>démontrer</b> l'équivariance $\mathrm{TransformerLayer}[PX] = P\,\mathrm{TransformerLayer}[X]$ (la question « Why? » de la slide 17) ;</li>
+<li>expliquer l'encodage positionnel, le masque causal et le décalage par ⟨start⟩ ;</li>
+<li>montrer que la prédiction du token suivant est une suite de classifications et un maximum de vraisemblance.</li>
+</ul></div>
+
+<h2 id="notations">Notations du chapitre</h2>
+<p>Les slides suivent les notations du livre DL (chapitre 12). Plusieurs lettres ont déjà servi avec un autre sens, et certaines servent deux fois dans ce chapitre : voir l'encadré qui suit le tableau.</p>
+<div class="notation-wrap"><table class="notation">
+<thead><tr><th>Symbole</th><th>Se lit / signifie</th><th>Nature</th><th>Où</th></tr></thead>
+<tbody>
+<tr class="grp"><td colspan="4">Séquences et tokens</td></tr>
+<tr><td>$\mathcal V$, $|\mathcal V|$</td><td>le vocabulaire (dictionnaire de tokens) et sa taille</td><td>ensemble fini ; entier</td><td class="where">§1 →</td></tr>
+<tr><td>$x_1,\dots,x_N$ ; $x_{\lt n}$</td><td>une séquence de $N$ tokens ; abréviation de $x_1,\dots,x_{n-1}$</td><td>tokens</td><td class="where">partout</td></tr>
+<tr><td>$p(x_n\mid x_{\lt n})$</td><td>loi du token suivant (« next token density », slide 3)</td><td>loi sur $\mathcal V$</td><td class="where">§1, §6–7</td></tr>
+<tr><td>$L$</td><td>ordre du modèle de Markov (§1) <b>ou</b> nombre de couches empilées (§6)</td><td>entier</td><td class="where">§1, §6</td></tr>
+<tr class="grp"><td colspan="4">Attention (§2–3)</td></tr>
+<tr><td>$x_n\in\R^D$, $X\in\R^{N\times D}$</td><td>vecteur (plongement) du token $n$ ; la matrice dont la ligne $n$ est $x_n^\top$</td><td>vecteur ; matrice</td><td class="where">§2 →</td></tr>
+<tr><td>$a_{nm}$, $A = (a_{nm})$</td><td>coefficient d'attention : poids du token $m$ dans la représentation du token $n$</td><td>réel de $[0,1]$ ; matrice $N\times N$</td><td class="where">§2 →</td></tr>
+<tr><td>$y_n = \sum_ma_{nm}x_m$, $Y$</td><td>sortie de l'attention pour le token $n$ ; la matrice des sorties</td><td>vecteur ; matrice</td><td class="where">§2 →</td></tr>
+<tr><td>$\mathrm{Softmax}[S]$</td><td>exponentielle de chaque coefficient, puis chaque <b>ligne</b> divisée par sa somme</td><td>opérateur</td><td class="where">§2 →</td></tr>
+<tr><td>$U\in\R^{D\times D}$</td><td>transformation apprise unique du mécanisme 3 ($\tilde X = XU$)</td><td>matrice</td><td class="where">§3</td></tr>
+<tr><td>$W^{(q)},W^{(k)}\in\R^{D\times D_k}$, $W^{(v)}\in\R^{D\times D_v}$</td><td>matrices apprises des requêtes, clés et valeurs</td><td>matrices</td><td class="where">§3 →</td></tr>
+<tr><td>$Q = XW^{(q)}$, $K = XW^{(k)}$, $V = XW^{(v)}$</td><td>requêtes (queries), clés (keys), valeurs (values) ; lignes $q_n^\top$, $k_m^\top$, $v_m^\top$</td><td>matrices $N\times D_k$, $N\times D_k$, $N\times D_v$</td><td class="where">§3 →</td></tr>
+<tr><td>$D_k$, $D_v$</td><td>dimension des requêtes/clés, des valeurs (souvent $D_v = D$, ou $D/H$ avec $H$ têtes)</td><td>entiers</td><td class="where">§3 →</td></tr>
+<tr><td>$H$, $H_h$, $W^{(o)}$</td><td>nombre de têtes ; sortie de la tête $h$ ; matrice de sortie $HD_v\times D$</td><td>entier ; matrices</td><td class="where">§3 →</td></tr>
+<tr class="grp"><td colspan="4">Couche de transformer (§4–5)</td></tr>
+<tr><td>$\mathrm{MLP}[\cdot]$</td><td>petit réseau de neurones $\R^D\to\R^D$ appliqué à <b>chaque ligne</b> séparément (mêmes poids)</td><td>fonction</td><td class="where">§4 →</td></tr>
+<tr><td>$\mathrm{LayerNorm}[\cdot]$</td><td>normalisation de chaque ligne : moyenne 0, variance 1, puis gain et biais appris</td><td>fonction</td><td class="where">§4 →</td></tr>
+<tr><td>$Z$, $\tilde X = \mathrm{TransformerLayer}[X]$</td><td>sortie intermédiaire (après l'attention) ; sortie de la couche</td><td>matrices $N\times D$</td><td class="where">§4 →</td></tr>
+<tr><td>$P$</td><td>matrice de permutation $N\times N$ : $PX$ réordonne les lignes (les tokens) de $X$</td><td>matrice</td><td class="where">§5</td></tr>
+<tr><td>$r_n\in\R^D$, $\tilde x_n = x_n+r_n$</td><td>vecteur d'encodage positionnel de la position $n$ ; token « avec sa position »</td><td>vecteurs</td><td class="where">§5 →</td></tr>
+<tr class="grp"><td colspan="4">Décodeur et apprentissage (§6–7)</td></tr>
+<tr><td>⟨start⟩</td><td>token spécial placé en tête de l'entrée (décale la séquence d'un cran)</td><td>token</td><td class="where">§6</td></tr>
+<tr><td>LSM, $W^{(p)}\in\R^{D\times|\mathcal V|}$</td><td>« linear-softmax » : $y_n = \mathrm{softmax}(\tilde x_n^\top W^{(p)})$, une loi sur $\mathcal V$ par position</td><td>couche ; matrice</td><td class="where">§6</td></tr>
+<tr><td>$x_1,\dots,x_T$, $t$, $\hat x_{t+1}$</td><td>séquence d'entraînement (slide 24), position courante, token prédit</td><td>tokens</td><td class="where">§7</td></tr>
+<tr><td>$\theta$</td><td>tous les paramètres (plongements, $W^{(q)},W^{(k)},W^{(v)},W^{(o)}$, MLP, LayerNorm, $W^{(p)}$)</td><td>vecteur</td><td class="where">§7</td></tr>
+</tbody></table></div>
+
+<div class="box warn"><div class="box-title">Pièges de notation (ils viennent des slides et du livre)</div>
+<ol>
+<li><b>$K$ est la matrice des clés</b>, pas un nombre de classes (chapitre 2) ni d'échantillons (chapitre 7). Le livre DL appelle aussi $K$ la taille du vocabulaire ; ici on écrit $|\mathcal V|$ pour éviter la collision.</li>
+<li><b>$V$ est la matrice des valeurs</b> ; le vocabulaire s'écrit $\mathcal V$ (calligraphique).</li>
+<li><b>$L$ a deux sens</b> : l'ordre d'un modèle de Markov (§1, comme dans DL §12.2.4) et le nombre de couches du décodeur (slide 21). Le livre utilise encore $L$ comme base de l'encodage sinusoïdal ; ici cette base s'appelle $b$.</li>
+<li><b>$T$ a trois sens</b> : une transformation (slide 17, $f(Tx) = Tf(x)$), la longueur d'une séquence d'entraînement (slide 24), et l'exposant $^\top$ de transposition.</li>
+<li><b>Les tokens sont les lignes de $X$</b> ($N\times D$). Donc $XX^\top$ est $N\times N$ (une case par paire de tokens), et le softmax agit <b>sur chaque ligne</b>, pas sur toute la matrice.</li>
+<li><b>Ce softmax n'est pas une probabilité</b> : dans l'attention il sert seulement à fabriquer des poids positifs de somme 1. Seul le softmax final (LSM) est une loi sur le vocabulaire.</li>
+<li><b>$x_n$ désigne deux choses</b> : un token (un élément de $\mathcal V$, ex. le mot « bank ») et son vecteur $x_n\in\R^D$ (son plongement, appris). Les slides passent de l'un à l'autre sans prévenir.</li>
+<li><b>$y_n$ change de sens</b> : sortie de l'attention aux slides 9–15, puis loi prédite sur $\mathcal V$ à la slide 21. Et avec le décalage ⟨start⟩, $y_n$ prédit $x_n$ à partir de $x_1,\dots,x_{n-1}$.</li>
+<li><b>Équivariant ≠ invariant</b> : équivariant, $f(Tx) = Tf(x)$ (la sortie bouge avec l'entrée) ; invariant, $f(Tx) = f(x)$ (la sortie ne bouge pas).</li>
+<li><b>« Décodeur » n'a rien à voir avec le décodeur du VAE</b> : ici c'est la partie d'un transformer qui génère une séquence token par token.</li>
+<li><b>$H$</b> est un nombre de têtes ; $H_h$ la sortie de la tête $h$. Ce n'est pas l'entropie $H(p)$ du chapitre 7.</li>
+</ol></div>
+
+<div class="box intu"><div class="box-title">Mode d'emploi des scènes</div>
+<ul>
+<li>Les points à halo se déplacent à la souris ; <b>◉ Affichage</b> (en haut à droite) masque ou affiche les éléments de chaque figure.</li>
+<li>Les plongements sont en dimension 2 quand on veut les <b>voir</b> (§2–3), et en dimension 8 à 32 quand on veut faire tourner une vraie couche (§5–7). Les poids des couches du §5–6 sont aléatoires (non entraînés) : les propriétés montrées (équivariance, causalité) valent pour <b>tous</b> les poids.</li>
+<li>La scène du §7 entraîne un vrai petit transformer dans ton navigateur (rétropropagation écrite à la main, Adam).</li>
+</ul></div>
+
+<!-- ===================================================================== -->
+<h2 id="ntp"><span class="num">1</span>Le problème : prédire le token suivant</h2>
+<div class="sources"><a class="src slides" href="../Slides/9-transformers.pdf#page=3" target="_blank">Slide p.3</a><a class="src book" href="../Textbooks/Deep%20Learning%20-%20Foundations%20and%20Concepts.pdf#page=395" target="_blank">DL §12.2.4 Autoregressive models</a></div>
+<div class="box road"><div class="box-title">Où on en est</div><div class="road-row"><span class="rk ok">Acquis</span><div>Chapitre 7 : estimer une densité $p_\theta(x)$ par maximum de vraisemblance, pour évaluer et pour générer. Chapitre 2 : la régression softmax prédit une loi sur $K$ classes.</div></div><div class="road-row"><span class="rk q">Il manque</span><div>Un modèle de densité pour des <b>séquences</b> de longueur variable, de tokens discrets.</div></div><div class="road-row"><span class="rk go">Cette partie</span><div>La factorisation en lois du token suivant (preuve), le modèle de Markov et pourquoi il ne suffit pas.</div></div></div>
+<div class="vids"><div class="vids-title">▶ Vidéos<span>en anglais · s'ouvrent sur YouTube</span></div><div class="vids-grid"><a class="vid" href="https://www.youtube.com/watch?v=wjZofJX0v4M" target="_blank" rel="noopener"><span class="vid-thumb">▶<img src="https://i.ytimg.com/vi/wjZofJX0v4M/mqdefault.jpg" loading="lazy" alt="" onerror="this.remove()"></span><span class="vid-body"><span class="vid-ch">3Blue1Brown</span><span class="vid-t" style="display:block">Transformers, the tech behind LLMs | Deep Learning Chapter 5</span><span class="vid-why" style="display:block">Vue d'ensemble : tokens, plongements, prédiction du mot suivant, génération.</span></span></a><a class="vid" href="https://www.youtube.com/watch?v=zxQyTK8quyY" target="_blank" rel="noopener"><span class="vid-thumb">▶<img src="https://i.ytimg.com/vi/zxQyTK8quyY/mqdefault.jpg" loading="lazy" alt="" onerror="this.remove()"></span><span class="vid-body"><span class="vid-ch">StatQuest</span><span class="vid-t" style="display:block">Transformer Neural Networks, ChatGPT's foundation, Clearly Explained!!!</span><span class="vid-why" style="display:block">Toute l'architecture pas à pas, sur une toute petite phrase.</span></span></a></div></div>
+
+<div class="box def"><div class="box-title">Prédiction de la « densité » du token suivant (slide 3)</div>
+On considère une séquence de tokens $x_1,x_2,\dots,x_n$, chacun pris dans un vocabulaire fini $\mathcal V$. Prédire la densité du token suivant, c'est estimer
+$$p(x_n\mid x_1,x_2,\dots,x_{n-1}).$$
+<b>Question</b> : comment modéliser cette probabilité conditionnelle ?
+<ul>
+<li><b>Modèle de Markov</b> : $p(x_n\mid x_1,\dots,x_{n-1}) = p(x_n\mid x_{n-1})$, le passé n'intervient que par le dernier token ;</li>
+<li>peut-on prendre en compte une <b>dépendance plus longue</b> ? Réseaux récurrents (RNN), puis transformers.</li>
+</ul>
+</div>
+<p>Pourquoi cette quantité suffit-elle pour « estimer une densité » (le titre du cours) ? Parce que la loi de toute la séquence s'en déduit :</p>
+<div class="box thm"><div class="box-title">Proposition — règle de la chaîne <span class="hint">DL éq. 12.31</span></div>
+Pour toute loi sur les séquences de longueur $N$ (avec $p(x_{\lt n})>0$),
+$$p(x_1,\dots,x_N) = \prod_{n=1}^Np(x_n\mid x_1,\dots,x_{n-1}),$$
+où le facteur $n = 1$ est $p(x_1)$. Cette factorisation est <b>exacte</b> : elle ne suppose rien sur la loi.
+</div>
+<details class="proof"><summary>Preuve — par récurrence sur $N$</summary>
+<div class="proof-body">
+<div class="step"><b>① Définition de la probabilité conditionnelle.</b> Pour deux événements, $p(a,b) = p(b)\,p(a\mid b)$ dès que $p(b)>0$. Avec $a = \{x_N\}$ et $b = \{x_1,\dots,x_{N-1}\}$ :
+$$p(x_1,\dots,x_N) = p(x_1,\dots,x_{N-1})\;p(x_N\mid x_1,\dots,x_{N-1}).$$</div>
+<div class="step"><b>② Récurrence.</b> Pour $N = 1$ la formule se lit $p(x_1) = p(x_1)$. Si elle est vraie au rang $N-1$, on remplace $p(x_1,\dots,x_{N-1})$ dans ① par le produit des $N-1$ premiers facteurs, et on obtient le rang $N$.</div>
+<div class="qed">∎</div>
+</div></details>
+<p>Un modèle qui sait calculer toutes les conditionnelles $p(x_n\mid x_{\lt n})$ sait donc <b>évaluer</b> la probabilité d'une séquence (multiplier les facteurs) et la <b>générer</b> (tirer $x_1$, puis $x_2$ sachant $x_1$, etc.). C'est un modèle <b>autorégressif</b>. Reste à choisir comment représenter chaque conditionnelle.</p>
+
+<div class="box def"><div class="box-title">Modèle de Markov d'ordre $L$ <span class="hint">DL §12.2.4</span></div>
+On suppose que $x_n$ ne dépend que des $L$ derniers tokens : $p(x_n\mid x_{\lt n}) = p(x_n\mid x_{n-L},\dots,x_{n-1})$, la même loi conditionnelle étant utilisée à toutes les positions. $L = 1$ est la slide 3 (un modèle « bi-gramme ») ; on estime chaque conditionnelle en comptant les occurrences dans un corpus.
+</div>
+<div class="box thm"><div class="box-title">Proposition — la table d'un modèle de Markov d'ordre $L$ a $|\mathcal V|^L(|\mathcal V|-1)$ paramètres libres <span class="hint">hors slides</span></div></div>
+<details class="proof"><summary>Preuve</summary>
+<div class="proof-body">
+<div class="step"><b>① Une loi par contexte.</b> Un contexte est une suite $(x_{n-L},\dots,x_{n-1})\in\mathcal V^L$ : il y en a $|\mathcal V|^L$. À chacun correspond une loi sur $\mathcal V$, sans lien a priori avec les autres.</div>
+<div class="step"><b>② Paramètres d'une loi sur $\mathcal V$.</b> $|\mathcal V|$ probabilités positives de somme 1 : $|\mathcal V|-1$ sont libres, la dernière s'en déduit. Total : $|\mathcal V|^L(|\mathcal V|-1)$.</div>
+<div class="step"><b>③ Ordre de grandeur.</b> Avec $|\mathcal V| = 5\cdot10^4$ et $L = 3$ : $1{,}25\cdot10^{14}\times5\cdot10^4\approx6\cdot10^{18}$ paramètres. Aucun corpus ne contient assez de texte pour les estimer : la plupart des contextes n'apparaissent jamais.</div>
+<div class="qed">∎</div>
+</div></details>
+<p>Dans la scène, le corpus ne contient que des phrases du type « I swam across the river to get to the other bank and … ». La fin dépend de « river » ou « street », placé 8 tokens plus tôt : un modèle d'ordre $L\lt 8$ ne peut pas le savoir.</p>
+<div data-scene="tf-ngram"></div>
+<details class="objs" open><summary>Les objets en jeu</summary><dl>
+<dt>$p(x_n\mid x_{\lt n})$</dt><dd><span class="ty">loi sur $\mathcal V$</span>Un vecteur de $|\mathcal V|$ probabilités, recalculé à chaque position. C'est la sortie d'un modèle de langage.</dd>
+<dt>le contexte $x_{\lt n}$</dt><dd><span class="ty">longueur variable</span>Il grandit avec $n$. Le modèle doit accepter une entrée de taille quelconque avec un nombre <b>fixe</b> de paramètres : le Markov y arrive en tronquant ; le transformer en partageant ses poids entre positions.</dd>
+<dt>la dépendance longue</dt><dd><span class="ty">le vrai problème</span>Le mot qui décide peut être loin (« river » … « bank »). Il faut un mécanisme qui va <b>chercher</b> l'information pertinente au lieu de tout garder.</dd>
+</dl></details>
+<div class="box q"><div class="box-title">Comment modéliser la probabilité conditionnelle ? (slide 3)</div>
+<details class="proof"><summary>Réponse</summary><div class="proof-body"><p>Il faut une fonction paramétrée qui prend un contexte de longueur quelconque et renvoie une loi sur $\mathcal V$. Une table (modèle de Markov) n'est possible qu'en tronquant le contexte à $L$ tokens, et sa taille $|\mathcal V|^L(|\mathcal V|-1)$ interdit les grands $L$. Un réseau de neurones dont les poids sont <b>partagés entre positions</b> a un nombre de paramètres indépendant de la longueur : un RNN (qui résume le passé dans un état mis à jour token par token) ou un transformer (qui, à chaque position, va relire tout le passé par l'attention, et s'entraîne en parallèle).</p></div></details></div>
+
+<!-- ===================================================================== -->
+<h2 id="attention"><span class="num">2</span>L'attention : une moyenne pondérée qui s'adapte</h2>
+<div class="sources"><a class="src slides" href="../Slides/9-transformers.pdf#page=5" target="_blank">Slides p.5–10</a><a class="src book" href="../Textbooks/Deep%20Learning%20-%20Foundations%20and%20Concepts.pdf#page=377" target="_blank">DL §12.1.2–12.1.3</a></div>
+<div class="box road"><div class="box-title">Où on en est</div><div class="road-row"><span class="rk ok">Acquis</span><div>Modéliser une séquence = prédire chaque token sachant tous les précédents (§1). Un contexte tronqué ne suffit pas.</div></div><div class="road-row"><span class="rk q">Il manque</span><div>Une opération qui construit, pour chaque token, une représentation qui tient compte des tokens <b>pertinents</b> de la séquence, où qu'ils soient.</div></div><div class="road-row"><span class="rk go">Cette partie</span><div>La couche de transformer vue de haut ; l'attention comme combinaison convexe (mécanisme 1) ; la self-attention $\mathrm{Softmax}[XX^\top]X$ (mécanisme 2).</div></div></div>
+<div class="vids"><div class="vids-title">▶ Vidéos<span>en anglais · s'ouvrent sur YouTube</span></div><div class="vids-grid"><a class="vid" href="https://www.youtube.com/watch?v=eMlx5fFNoYc" target="_blank" rel="noopener"><span class="vid-thumb">▶<img src="https://i.ytimg.com/vi/eMlx5fFNoYc/mqdefault.jpg" loading="lazy" alt="" onerror="this.remove()"></span><span class="vid-body"><span class="vid-ch">3Blue1Brown</span><span class="vid-t" style="display:block">Attention in transformers, step-by-step | Deep Learning Chapter 6</span><span class="vid-why" style="display:block">L'attention en géométrie : produits scalaires, softmax, mise à jour des vecteurs.</span></span></a><a class="vid" href="https://www.youtube.com/watch?v=PSs6nxngL6k" target="_blank" rel="noopener"><span class="vid-thumb">▶<img src="https://i.ytimg.com/vi/PSs6nxngL6k/mqdefault.jpg" loading="lazy" alt="" onerror="this.remove()"></span><span class="vid-body"><span class="vid-ch">StatQuest</span><span class="vid-t" style="display:block">Attention for Neural Networks, Clearly Explained!!!</span><span class="vid-why" style="display:block">D'où vient l'attention : traduction avec un RNN encodeur–décodeur (Bahdanau et al.).</span></span></a></div></div>
+
+<div class="box def"><div class="box-title">Le transformer, vue d'ensemble (slide 5)</div>
+Une architecture qui transforme un <b>ensemble de vecteurs</b> d'un espace en un ensemble de vecteurs d'un autre espace, <b>de même dimension</b> (proposée par Google, 2017).
+<ul>
+<li>✓ suit une <b>loi d'échelle</b> (neural scaling law) : les performances augmentent régulièrement avec le nombre de paramètres (article GPT-2) ;</li>
+<li>✓ entraînement <b>parallèle</b> sur tous les tokens d'une séquence ;</li>
+<li>✓ facile à entraîner (apprentissage <b>auto-supervisé</b>, §7).</li>
+</ul>
+Ce cours se concentre sur les transformers « <b>decoder-only</b> » (§6).
+</div>
+<div class="box def"><div class="box-title">L'attention (slides 6–7)</div>
+Le concept d'attention a été introduit par Bahdanau, Cho et Bengio (2014), pour la traduction automatique. L'attention est un mécanisme qui <b>sélectionne la partie utile d'un contexte</b>. Elle dépend des tokens précédents : dans « I <b>swam</b> across the <b>river</b> to get to the other <b>bank</b> », « bank » doit regarder « river » (et un peu « swam ») pour comprendre qu'il s'agit d'une berge ; avec « walked … street », le même mot « bank » désigne une banque.
+</div>
+<div class="box def"><div class="box-title">Couche de transformer (slide 8)</div>
+Une couche de transformer envoie un ensemble de vecteurs sur un ensemble de vecteurs : $\tilde X = \mathrm{TransformerLayer}[X]$, avec $X,\tilde X\in\R^{N\times D}$ (une ligne par token). Elle a deux composants :
+<ul>
+<li>le <b>mécanisme d'attention</b>, qui mélange l'information <b>entre</b> tokens (il agit sur les colonnes de $X$) ;</li>
+<li>une <b>transformation des caractéristiques</b>, qui agit sur chaque token séparément (chaque ligne).</li>
+</ul>
+</div>
+
+<h3 id="att1">Mécanisme 1 : une combinaison convexe</h3>
+<div class="box def"><div class="box-title">Coefficients d'attention (slide 9)</div>
+$$y_n = \sum_{m=1}^Na_{nm}\,x_m,\qquad a_{nm}\ge0,\qquad\sum_{m=1}^Na_{nm} = 1.$$
+$a_{nm}$ est le <b>coefficient d'attention</b> : par exemple $x_m$ représente « river » et $y_n$ la nouvelle représentation de « bank ». La sortie est une <b>combinaison convexe</b> des entrées.
+<ul><li>✓ on se concentre sur les entrées liées pour représenter la sortie ;</li><li>✗ les coefficients ne sont pas <b>adaptatifs</b> (fixés, ils ne dépendent pas des données).</li></ul>
+</div>
+<div class="box thm"><div class="box-title">Proposition — la sortie reste dans l'enveloppe convexe des entrées</div>
+Sous les deux contraintes, $y_n\in\mathrm{conv}\{x_1,\dots,x_N\}$, et chaque coordonnée vérifie $\min_m x_{m,i}\le y_{n,i}\le\max_m x_{m,i}$.
+</div>
+<details class="proof"><summary>Preuve</summary>
+<div class="proof-body">
+<div class="step"><b>① Enveloppe convexe.</b> C'est par définition l'ensemble des $\sum_m\lambda_mx_m$ avec $\lambda_m\ge0$ et $\sum_m\lambda_m = 1$ : $y_n$ est exactement de cette forme.</div>
+<div class="step"><b>② Coordonnées.</b> $y_{n,i} = \sum_ma_{nm}x_{m,i}\le\sum_ma_{nm}\max_{m'}x_{m',i} = \max_{m'}x_{m',i}$, car $a_{nm}\ge0$ et $\sum_ma_{nm} = 1$. Même chose pour le minimum.</div>
+<div class="qed">∎</div>
+</div></details>
+<div class="why">Pourquoi ces contraintes ? Avec des poids de signes quelconques, un coefficient très positif pourrait être compensé par un très négatif, et « faire attention » n'aurait plus de sens. Avec une somme fixée à 1, accorder plus d'attention à un token impose d'en accorder moins aux autres (DL §12.1.2).</div>
+
+<h3 id="att2">Mécanisme 2 : la self-attention</h3>
+<div class="box def"><div class="box-title">Self-attention (slide 10)</div>
+$$y_n = \sum_{m=1}^Na_{nm}x_m,\qquad a_{nm} = \frac{\exp(x_n^\top x_m)}{\sum_{m'=1}^N\exp(x_n^\top x_{m'})}.$$
+On construit les coefficients <b>à partir des entrées</b>.
+<ul><li>✓ les coefficients sont maintenant adaptatifs ; le produit scalaire mesure la corrélation entre deux tokens ;</li><li>✗ les coefficients ne sont pas <b>apprenables</b> (aucun paramètre).</li></ul>
+En notation matricielle : $Y = \mathrm{Softmax}[XX^\top]\,X$ avec $X,Y\in\R^{N\times D}$.
+</div>
+<div class="box thm"><div class="box-title">Proposition — la self-attention vérifie les contraintes, et s'écrit $Y = \mathrm{Softmax}[XX^\top]X$</div></div>
+<details class="proof"><summary>Preuve</summary>
+<div class="proof-body">
+<div class="step"><b>① Contraintes.</b> $\exp>0$ donc $a_{nm}>0$ ; et $\sum_ma_{nm} = \frac{\sum_m\exp(x_n^\top x_m)}{\sum_{m'}\exp(x_n^\top x_{m'})} = 1$.</div>
+<div class="step"><b>② Les scores.</b> La ligne $n$ de $X$ est $x_n^\top$ et la colonne $m$ de $X^\top$ est $x_m$, donc $(XX^\top)_{nm} = x_n^\top x_m$. Le softmax ligne par ligne donne $\mathrm{Softmax}[XX^\top]_{nm} = a_{nm}$.</div>
+<div class="step"><b>③ Les sorties.</b> La ligne $n$ de $AX$ vaut $\sum_mA_{nm}(\text{ligne } m\text{ de }X) = \sum_ma_{nm}x_m^\top = y_n^\top$ : c'est la ligne $n$ de $Y$.</div>
+<div class="qed">∎</div>
+</div></details>
+<p>Géométriquement, $x_n^\top x_m = \|x_n\|\,\|x_m\|\cos\angle(x_n,x_m)$ : un token pèse d'autant plus qu'il <b>pointe dans la même direction</b> que $x_n$ et qu'il est <b>long</b>. Déplace les tokens :</p>
+<div data-scene="tf-attn"></div>
+<details class="objs" open><summary>Les objets en jeu</summary><dl>
+<dt>$a_{nm}$</dt><dd><span class="ty">poids de $m$ pour $n$</span>Une ligne $(a_{n1},\dots,a_{nN})$ par token : une loi sur les positions. Il y a donc $N^2$ coefficients, recalculés pour chaque séquence.</dd>
+<dt>$y_n$</dt><dd><span class="ty">nouvelle représentation</span>Un point de l'enveloppe convexe des $x_m$, tiré vers les tokens « semblables » à $x_n$. Toutes les sorties ensemble se rapprochent les unes des autres : l'attention <b>mélange</b>.</dd>
+<dt>« self »</dt><dd><span class="ty">même séquence partout</span>Requêtes, clés et valeurs viennent de la même séquence $X$. Dans la traduction (encodeur–décodeur), les clés et valeurs viennent d'une autre séquence (« cross-attention », §6).</dd>
+</dl></details>
+<div class="box q"><div class="box-title">Avec $a_{nm} = \mathrm{softmax}_m(x_n^\top x_m)$, un token fait-il toujours le plus attention à lui-même ?</div>
+<details class="proof"><summary>Réponse</summary><div class="proof-body"><p>Non. Par Cauchy–Schwarz, $x_n^\top x_m\le\|x_n\|\,\|x_m\|$, ce qui dépasse $x_n^\top x_n = \|x_n\|^2$ dès que $\|x_m\|>\|x_n\|$ et que l'angle est assez petit. Dans la scène, pose « river » plus loin que « bank » dans la même direction : « bank » regarde surtout « river ». Si tous les vecteurs ont la même norme, alors oui, $x_n^\top x_m\le x_n^\top x_n$ et le maximum est atteint en $m = n$ (l'attention de chaque token sur lui-même domine), ce qui montre bien qu'il manque des paramètres.</p></div></details></div>
+
+<!-- ===================================================================== -->
+<h2 id="qkv"><span class="num">3</span>Rendre l'attention apprenable : requêtes, clés, valeurs</h2>
+<div class="sources"><a class="src slides" href="../Slides/9-transformers.pdf#page=11" target="_blank">Slides p.11–15</a><a class="src book" href="../Textbooks/Deep%20Learning%20-%20Foundations%20and%20Concepts.pdf#page=379" target="_blank">DL §12.1.4–12.1.6</a></div>
+<div class="box road"><div class="box-title">Où on en est</div><div class="road-row"><span class="rk ok">Acquis</span><div>$Y = \mathrm{Softmax}[XX^\top]X$ : des coefficients qui dépendent des données (§2).</div></div><div class="road-row"><span class="rk q">Il manque</span><div>Des <b>paramètres</b> à apprendre, des scores <b>asymétriques</b>, un softmax qui ne sature pas, et la possibilité de regarder plusieurs choses à la fois.</div></div><div class="road-row"><span class="rk go">Cette partie</span><div>Mécanismes 3 ($XU$), 4 ($Q,K,V$) et 5 (division par $\sqrt{D_k}$), avec leurs preuves ; attention multi-têtes.</div></div></div>
+<div class="vids"><div class="vids-title">▶ Vidéos<span>en anglais · s'ouvrent sur YouTube</span></div><div class="vids-grid"><a class="vid" href="https://www.youtube.com/watch?v=KJtZARuO3JY" target="_blank" rel="noopener"><span class="vid-thumb">▶<img src="https://i.ytimg.com/vi/KJtZARuO3JY/mqdefault.jpg" loading="lazy" alt="" onerror="this.remove()"></span><span class="vid-body"><span class="vid-ch">Grant Sanderson</span><span class="vid-t" style="display:block">Visualizing transformers and attention</span><span class="vid-why" style="display:block">Requêtes, clés, valeurs et têtes multiples, en conférence d'une heure.</span></span></a><a class="vid" href="https://www.youtube.com/watch?v=iDulhoQ2pro" target="_blank" rel="noopener"><span class="vid-thumb">▶<img src="https://i.ytimg.com/vi/iDulhoQ2pro/mqdefault.jpg" loading="lazy" alt="" onerror="this.remove()"></span><span class="vid-body"><span class="vid-ch">Yannic Kilcher</span><span class="vid-t" style="display:block">Attention Is All You Need</span><span class="vid-why" style="display:block">Lecture commentée de l'article original (Vaswani et al., 2017).</span></span></a></div></div>
+
+<h3 id="att3">Mécanisme 3 : une transformation apprise $U$</h3>
+<div class="box def"><div class="box-title">Paramétrisation (slide 11)</div>
+On remplace $X$ par $\tilde X := XU$, avec $U\in\R^{D\times D}$ apprise. Alors $Y = \mathrm{Softmax}[XX^\top]X$ devient
+$$Y = \mathrm{Softmax}[XUU^\top X^\top]\,XU.$$
+<ul><li>✓ les coefficients d'attention sont apprenables ;</li><li>✗ les scores avant le softmax sont <b>symétriques</b> : le score du token $i$ vers le token $j$ égale celui de $j$ vers $i$, d'où moins de degrés de liberté.</li></ul>
+</div>
+<div class="box thm"><div class="box-title">Proposition — les scores $S = XUU^\top X^\top$ sont symétriques, et les poids vérifient $a_{nm}\,Z_n = a_{mn}\,Z_m$</div>
+où $Z_n = \sum_{m'}\exp(s_{nm'})$ est la constante de normalisation de la ligne $n$. Les poids eux-mêmes ne sont donc pas symétriques, mais leur asymétrie est entièrement fixée par les $Z_n$.
+</div>
+<details class="proof"><summary>Preuve</summary>
+<div class="proof-body">
+<div class="step"><b>① Symétrie.</b> $S^\top = (XUU^\top X^\top)^\top = (X^\top)^\top(U^\top)^\top U^\top X^\top = XUU^\top X^\top = S$. Autrement dit, $s_{nm} = (U^\top x_n)^\top(U^\top x_m)$ : le même vecteur $U^\top x$ sert de « requête » et de « clé ».</div>
+<div class="step"><b>② Les poids.</b> $a_{nm} = e^{s_{nm}}/Z_n$ et $a_{mn} = e^{s_{mn}}/Z_m = e^{s_{nm}}/Z_m$. Donc $a_{nm}Z_n = e^{s_{nm}} = a_{mn}Z_m$.</div>
+<div class="step"><b>③ Degrés de liberté.</b> Une matrice symétrique $N\times N$ n'a que $N(N+1)/2$ coefficients libres au lieu de $N^2$ ; de plus $s_{nn} = \|U^\top x_n\|^2\ge0$ et $S$ est semi-définie positive. Or la relation entre deux tokens est souvent asymétrique : « chisel » (ciseau à bois) est fortement lié à « tool » (tout ciseau est un outil), mais « tool » ne l'est que faiblement à « chisel » (DL §12.1.4).</div>
+<div class="qed">∎</div>
+</div></details>
+
+<h3 id="att4">Mécanisme 4 : requêtes, clés et valeurs</h3>
+<div class="box def"><div class="box-title">Query, Key, Value (slide 12)</div>
+On remplace $Y = \mathrm{Softmax}[XUU^\top X^\top]XU$ par
+$$Y = \mathrm{Softmax}[QK^\top]\,V,\qquad Q := XW^{(q)},\quad K := XW^{(k)},\quad V := XW^{(v)},$$
+avec $W^{(q)},W^{(k)}\in\R^{D\times D_k}$ et $W^{(v)}\in\R^{D\times D_v}$ (souvent $D_v = D$) : trois transformations linéaires apprises, indépendantes.
+<ul><li>✓ les scores avant le softmax n'ont plus besoin d'être symétriques ;</li><li>✗ le module d'attention a un problème de <b>gradient évanescent</b> (mécanisme 5).</li></ul>
+</div>
+<div class="box def"><div class="box-title">D'où viennent les noms ? (slide 13)</div>
+Ce sont des termes de la <b>recherche d'information</b>. Pour choisir un film en ligne (DL §12.1.3) : chaque film est décrit par une <b>clé</b> (genre, acteurs…), le fichier du film est la <b>valeur</b>, et l'utilisateur fournit une <b>requête</b> (ce qu'il cherche). On compare la requête à toutes les clés et on renvoie la valeur qui correspond le mieux ; l'attention en est la version « douce » : on renvoie une moyenne des valeurs, pondérée par la qualité de la correspondance.
+<ul>
+<li><b>clé</b> $K$ ou $k_m$ : une transformation de $x_m$ qui <b>résume</b> l'entrée $x_m$ (« ce que je contiens ») ;</li>
+<li><b>valeur</b> $V$ ou $v_m$ : une transformation de $x_m$ qui sert à <b>construire</b> la sortie $y_n$ (« ce que je transmets ») ;</li>
+<li><b>requête</b> $Q$ ou $q_n$ : une transformation de $x_n$ qui résume l'entrée $x_n$ (« ce que je cherche »).</li>
+</ul>
+</div>
+<div class="box thm"><div class="box-title">Proposition — dimensions, et le mécanisme 3 comme cas particulier</div>
+$QK^\top\in\R^{N\times N}$ avec $(QK^\top)_{nm} = q_n^\top k_m = x_n^\top W^{(q)}W^{(k)\top}x_m$, et $Y\in\R^{N\times D_v}$. Le score est une forme bilinéaire de matrice $W^{(q)}W^{(k)\top}$, qui n'a aucune raison d'être symétrique. Avec $W^{(q)} = W^{(k)} = W^{(v)} = U$ on retrouve le mécanisme 3.
+</div>
+<details class="proof"><summary>Preuve</summary>
+<div class="proof-body">
+<div class="step"><b>① Tailles.</b> $Q$ et $K$ sont $(N\times D)(D\times D_k) = N\times D_k$, donc $QK^\top$ est $(N\times D_k)(D_k\times N) = N\times N$ ; $V$ est $N\times D_v$ et $\mathrm{Softmax}[QK^\top]V$ est $(N\times N)(N\times D_v) = N\times D_v$.</div>
+<div class="step"><b>② Coefficients.</b> La ligne $n$ de $Q$ est $q_n^\top = x_n^\top W^{(q)}$, la colonne $m$ de $K^\top$ est $k_m = W^{(k)\top}x_m$ ; leur produit est $x_n^\top W^{(q)}W^{(k)\top}x_m$.</div>
+<div class="step"><b>③ Cas particulier.</b> Pour $W^{(q)} = W^{(k)} = W^{(v)} = U$ : $QK^\top = XUU^\top X^\top$ et $V = XU$.</div>
+<div class="qed">∎</div>
+</div></details>
+<p>Dans la scène, les flèches or sont les requêtes $q_n$ et les bleues les clés $k_m$ ; le score est leur produit scalaire. Au mécanisme 3, requête et clé d'un même token coïncident ; au mécanisme 4, tourne $W^{(q)}$ et $W^{(k)}$ séparément :</p>
+<div data-scene="tf-qkv"></div>
+
+<h3 id="att5">Mécanisme 5 : diviser par $\sqrt{D_k}$</h3>
+<div class="box def"><div class="box-title">Self-attention mise à l'échelle (slide 14)</div>
+$$Y = \mathrm{Attention}(Q,K,V) := \mathrm{Softmax}\Big[\frac{QK^\top}{\sqrt{D_k}}\Big]V.$$
+On remet à l'échelle le produit des requêtes et des clés.
+<ul><li>✓ réduit la <b>saturation</b> du softmax causée par de grands produits scalaires ;</li><li>✗ une seule loi d'attention par requête (mécanisme suivant : plusieurs têtes).</li></ul>
+</div>
+<div class="box thm"><div class="box-title">Proposition — si les coordonnées de $q$ et $k$ sont indépendantes, de moyenne 0 et de variance 1, alors $\E[q^\top k] = 0$ et $\mathrm{Var}(q^\top k) = D_k$ <span class="hint">DL ex. 12.4</span></div>
+Donc $q^\top k/\sqrt{D_k}$ est de variance 1, quelle que soit la dimension.
+</div>
+<details class="proof"><summary>Preuve — étape par étape</summary>
+<div class="proof-body">
+<div class="step"><b>① Moyenne.</b> $q^\top k = \sum_{i=1}^{D_k}q_ik_i$ et, par indépendance, $\E[q_ik_i] = \E[q_i]\E[k_i] = 0$.</div>
+<div class="step"><b>② Variance d'un terme.</b> $\mathrm{Var}(q_ik_i) = \E[q_i^2k_i^2]-0 = \E[q_i^2]\E[k_i^2] = 1\cdot1 = 1$ (indépendance, puis $\E[q_i^2] = \mathrm{Var}(q_i)+\E[q_i]^2 = 1$).</div>
+<div class="step"><b>③ Les termes sont décorrélés.</b> Pour $i\ne j$ : $\mathrm{Cov}(q_ik_i,q_jk_j) = \E[q_ik_iq_jk_j] = \E[q_i]\E[k_i]\E[q_j]\E[k_j] = 0$. La variance de la somme est donc la somme des variances : $\mathrm{Var}(q^\top k) = D_k$.</div>
+<div class="step"><b>④ Après division.</b> $\mathrm{Var}(q^\top k/\sqrt{D_k}) = D_k/D_k = 1$.</div>
+<div class="qed">∎</div>
+</div></details>
+<p>Pourquoi de grands scores sont-ils un problème ? Parce que le softmax devient presque « tout ou rien », et sa dérivée s'annule :</p>
+<div class="box thm"><div class="box-title">Proposition — jacobien du softmax et saturation <span class="hint">hors slides</span></div>
+Pour $a = \mathrm{softmax}(s)\in\R^N$ : $\dfrac{\partial a_i}{\partial s_j} = a_i(\delta_{ij}-a_j)$, soit $J = \mathrm{diag}(a)-aa^\top$. Si $\max_ia_i = 1-\varepsilon$, tous les coefficients de $J$ sont $\le\varepsilon$ en valeur absolue.
+</div>
+<details class="proof"><summary>Preuve</summary>
+<div class="proof-body">
+<div class="step"><b>① Dérivée.</b> $a_i = e^{s_i}/Z$ avec $Z = \sum_le^{s_l}$ et $\partial Z/\partial s_j = e^{s_j}$. Donc $\frac{\partial a_i}{\partial s_j} = \frac{\delta_{ij}e^{s_i}}{Z}-\frac{e^{s_i}e^{s_j}}{Z^2} = a_i\delta_{ij}-a_ia_j$.</div>
+<div class="step"><b>② Saturation.</b> Soit $i^\star$ le maximum, $a_{i^\star} = 1-\varepsilon$ ; les autres vérifient $a_i\le\sum_{l\ne i^\star}a_l = \varepsilon$. Diagonale : $a_i(1-a_i)\le\varepsilon$ dans les deux cas ($1-a_{i^\star} = \varepsilon$, ou $a_i\le\varepsilon$). Hors diagonale : $a_ia_j\le\varepsilon$ car l'un des deux indices n'est pas $i^\star$.</div>
+<div class="step"><b>③ Conséquence.</b> Le gradient de la perte par rapport aux scores est $J^\top\nabla_a\ell$ : il tend vers 0 quand le softmax sature. Comme les scores dépendent de $W^{(q)}$ et $W^{(k)}$ uniquement à travers le softmax, ces matrices n'apprennent presque plus.</div>
+<div class="qed">∎</div>
+</div></details>
+<div data-scene="tf-scale"></div>
+
+<h3 id="multihead">Attention multi-têtes</h3>
+<div class="box def"><div class="box-title">Multi-head attention (slide 15)</div>
+On utilise $H$ têtes d'attention <b>en parallèle</b>, chacune avec ses propres paramètres :
+$$H_h = \mathrm{Attention}\big(XW_h^{(q)},\,XW_h^{(k)},\,XW_h^{(v)}\big)\in\R^{N\times D_v},\qquad Y(X) = \mathrm{Concat}[H_1,\dots,H_H]\,W^{(o)},$$
+avec $W^{(o)}\in\R^{HD_v\times D}$, de sorte que $Y\in\R^{N\times D}$ (souvent $D_v = D/H$).
+<ul><li>✓ plusieurs lois d'attention par requête, une par tête : « bank » peut regarder « river » dans une tête et « other » dans une autre ;</li><li>✗ pas encore de transformation non linéaire position par position (§4).</li></ul>
+</div>
+<div class="box thm"><div class="box-title">Proposition — la sortie multi-têtes est une somme de contributions des têtes <span class="hint">DL ex. 12.5</span></div>
+En découpant $W^{(o)}$ en $H$ blocs de lignes $W_h^{(o)}\in\R^{D_v\times D}$ : $Y(X) = \sum_{h=1}^HH_hW_h^{(o)}$. Avec $D_v = D/H$, la couche a $4D^2$ paramètres (sans biais), autant qu'une seule tête de taille $D$.
+</div>
+<details class="proof"><summary>Preuve</summary>
+<div class="proof-body">
+<div class="step"><b>① Produit par blocs.</b> $\mathrm{Concat}[H_1,\dots,H_H] = [H_1\ \cdots\ H_H]$ est découpée en blocs de colonnes de largeur $D_v$, et $W^{(o)}$ en blocs de lignes de hauteur $D_v$ compatibles. Le produit par blocs donne $[H_1\cdots H_H]\begin{bmatrix}W_1^{(o)}\\\vdots\\W_H^{(o)}\end{bmatrix} = \sum_hH_hW_h^{(o)}$.</div>
+<div class="step"><b>② Paramètres.</b> Chaque tête a $W_h^{(q)},W_h^{(k)},W_h^{(v)}$ de taille $D\times D_v$ : $3DD_v$ ; plus $W^{(o)}$ : $HD_vD$. Total $3HDD_v+HD_vD = 4HDD_v = 4D^2$ si $D_v = D/H$.</div>
+<div class="qed">∎</div>
+</div></details>
+<details class="objs" open><summary>Les objets en jeu</summary><dl>
+<dt>$q_n$, $k_m$, $v_m$</dt><dd><span class="ty">trois rôles d'un même token</span>Le token $n$ pose une question ($q_n$) ; chaque token $m$ y répond par sa clé ($k_m$) et, s'il est retenu, transmet sa valeur ($v_m$). Trois matrices différentes : un token peut chercher une chose et en offrir une autre.</dd>
+<dt>$W^{(q)}W^{(k)\top}$</dt><dd><span class="ty">matrice $D\times D$ de rang $\le D_k$</span>Elle définit la notion de « ressemblance » apprise. Non symétrique en général.</dd>
+<dt>$\sqrt{D_k}$</dt><dd><span class="ty">écart-type des scores</span>Diviser par lui garde des scores d'ordre 1, donc un softmax qui n'est ni uniforme ni saturé à l'initialisation.</dd>
+<dt>$H$ têtes</dt><dd><span class="ty">plusieurs attentions en parallèle</span>Comme plusieurs filtres dans une couche de convolution : chaque tête apprend son propre motif (syntaxe, sens, position…).</dd>
+</dl></details>
+<div class="box q"><div class="box-title">Pourquoi diviser précisément par $\sqrt{D_k}$, et pas par $D_k$ ? (slide 14)</div>
+<details class="proof"><summary>Réponse</summary><div class="proof-body"><p>Parce que c'est l'<b>écart-type</b> des scores (proposition ci-dessus) : à l'initialisation, quand requêtes et clés ont des coordonnées à peu près indépendantes de variance 1, $q^\top k/\sqrt{D_k}$ a une variance 1 quelle que soit la dimension. Diviser par $D_k$ donnerait une variance $1/D_k$ : pour $D_k$ grand, tous les scores seraient presque nuls et le softmax presque uniforme, ce qui détruit l'attention (il faudrait que les poids grandissent beaucoup pour en sortir). Ne pas diviser donne une variance $D_k$, donc la saturation.</p></div></details></div>
+
+<!-- ===================================================================== -->
+<h2 id="layer"><span class="num">4</span>La couche de transformer, puis l'empilement</h2>
+<div class="sources"><a class="src slides" href="../Slides/9-transformers.pdf#page=16" target="_blank">Slides p.16, 19</a><a class="src book" href="../Textbooks/Deep%20Learning%20-%20Foundations%20and%20Concepts.pdf#page=384" target="_blank">DL §12.1.7–12.1.8</a><a class="src book" href="../Textbooks/Deep%20Learning%20-%20Foundations%20and%20Concepts.pdf#page=246" target="_blank">DL §7.4.3 Layer normalization</a></div>
+<div class="box road"><div class="box-title">Où on en est</div><div class="road-row"><span class="rk ok">Acquis</span><div>L'attention multi-têtes $Y(X)\in\R^{N\times D}$ : apprenable, asymétrique, mise à l'échelle (§3).</div></div><div class="road-row"><span class="rk q">Il manque</span><div>De la non-linéarité « dans » chaque token, et de quoi entraîner un empilement profond sans que les gradients disparaissent.</div></div><div class="road-row"><span class="rk go">Cette partie</span><div>MLP par position, connexions résiduelles, LayerNorm ; pourquoi on peut empiler ; coût de calcul.</div></div></div>
+<div class="vids"><div class="vids-title">▶ Vidéos<span>en anglais · s'ouvrent sur YouTube</span></div><div class="vids-grid"><a class="vid" href="https://www.youtube.com/watch?v=9-Jl0dxWQs8" target="_blank" rel="noopener"><span class="vid-thumb">▶<img src="https://i.ytimg.com/vi/9-Jl0dxWQs8/mqdefault.jpg" loading="lazy" alt="" onerror="this.remove()"></span><span class="vid-body"><span class="vid-ch">3Blue1Brown</span><span class="vid-t" style="display:block">How might LLMs store facts | Deep Learning Chapter 7</span><span class="vid-why" style="display:block">Le rôle du MLP appliqué à chaque token, et la connexion résiduelle.</span></span></a></div></div>
+
+<div class="box def"><div class="box-title">Couche de transformer (slide 16)</div>
+On ajoute une transformation non linéaire <b>position par position</b>, des <b>connexions résiduelles</b> et une <b>normalisation de couche</b> :
+$$Z = \mathrm{LayerNorm}\big[Y(X)+X\big],\qquad\tilde X = \mathrm{TransformerLayer}[X] = \mathrm{LayerNorm}\big[\mathrm{MLP}[Z]+Z\big].$$
+Le MLP (par exemple deux couches avec ReLU, de $\R^D$ dans $\R^D$) est appliqué à chaque ligne de $Z$ avec les <b>mêmes</b> poids.
+<ul>
+<li>✓ les transformations non linéaires augmentent l'expressivité ;</li>
+<li>✓ les connexions résiduelles atténuent l'évanouissement du gradient ;</li>
+<li>✓ la normalisation de couche stabilise l'entraînement ;</li>
+<li>✗ un transformer est « <b>équivariant</b> » par rapport aux tokens d'entrée : « The food was bad, not good at all » et « The food was good, not bad at all » reçoivent les mêmes représentations, à l'ordre près (§5).</li>
+</ul>
+</div>
+<div class="box def"><div class="box-title">Normalisation de couche (LayerNorm) <span class="hint">DL §7.4.3</span></div>
+Pour une ligne $z\in\R^D$ : $\mu = \frac1D\sum_iz_i$, $\sigma^2 = \frac1D\sum_i(z_i-\mu)^2$, puis
+$$\mathrm{LayerNorm}(z)_i = \gamma_i\,\frac{z_i-\mu}{\sqrt{\sigma^2+\epsilon}}+\beta_i,$$
+avec un gain $\gamma$ et un biais $\beta$ appris ($\epsilon$ petit, pour la stabilité numérique). Contrairement à la normalisation par lot (batch norm), les statistiques sont calculées <b>sur un seul token</b>, sans regarder les autres exemples du lot.
+</div>
+<div class="box thm"><div class="box-title">Proposition — pourquoi chaque morceau <span class="hint">hors slides</span></div>
+(a) Sans MLP, les sorties de l'attention vérifient $y_n\in\mathrm{Vect}\{v_1,\dots,v_N\}$. (b) Pour un bloc résiduel $h(x) = x+F(x)$ : $\frac{\partial h}{\partial x} = I+\frac{\partial F}{\partial x}$. (c) Pour $c>0$ et $\epsilon = 0$ : $\mathrm{LayerNorm}(cz) = \mathrm{LayerNorm}(z)$.
+</div>
+<details class="proof"><summary>Preuve</summary>
+<div class="proof-body">
+<div class="step"><b>(a) Le sous-espace des valeurs.</b> $y_n = \sum_ma_{nm}v_m$ est une combinaison linéaire des $v_m$, et après $W^{(o)}$ on reste dans l'image d'une application linéaire de ce sous-espace. La non-linéarité ne passe que par les coefficients ; le MLP ajoute une vraie transformation non linéaire de chaque vecteur.</div>
+<div class="step"><b>(b) Le chemin du gradient.</b> La dérivée d'une somme est la somme des dérivées, et la dérivée de l'identité est $I$. En rétropropagation, $\nabla_x\ell = \big(I+\frac{\partial F}{\partial x}\big)^\top\nabla_h\ell$ : même si $\frac{\partial F}{\partial x}$ est petit, le gradient passe intact par le terme $I$. Avec $L$ blocs empilés, le produit des jacobiens contient toujours le terme $I\cdots I = I$.</div>
+<div class="step"><b>(c) Invariance d'échelle.</b> Pour $cz$ : la moyenne devient $c\mu$ et l'écart-type $c\sigma$, donc $\frac{cz_i-c\mu}{c\sigma} = \frac{z_i-\mu}{\sigma}$. L'échelle des activations ne peut plus dériver d'une couche à l'autre.</div>
+<div class="qed">∎</div>
+</div></details>
+<div class="box def"><div class="box-title">Passer à l'échelle (slide 19)</div>
+On empile simplement des couches de transformer : $X^{(0)} = X$, $X^{(\ell)} = \mathrm{TransformerLayer}_\ell[X^{(\ell-1)}]$, chaque couche ayant ses propres paramètres. <b>Possible ? Oui</b>, car la dimension de sortie ($N\times D$) est égale à celle d'entrée.
+</div>
+<div class="box thm"><div class="box-title">Proposition — coût d'une couche <span class="hint">hors slides · DL §12.1.8</span></div>
+Avec $D_k\approx D_v\approx D$ : la couche a $O(D^2)$ paramètres, indépendamment de $N$, et coûte $O(N^2D+ND^2)$ opérations. Un réseau dense de $\R^{ND}$ dans $\R^{ND}$ aurait $O(N^2D^2)$ paramètres.
+</div>
+<details class="proof"><summary>Preuve</summary>
+<div class="proof-body">
+<div class="step"><b>① Paramètres.</b> $W^{(q)},W^{(k)},W^{(v)},W^{(o)}$ et le MLP sont des matrices $D\times D$ (à un facteur près), <b>partagées</b> entre les positions : $O(D^2)$.</div>
+<div class="step"><b>② Calcul.</b> $Q,K,V$ : $N$ produits matrice–vecteur de taille $D\times D$, soit $O(ND^2)$. $QK^\top$ : $N^2$ produits scalaires de taille $D$, $O(N^2D)$ ; idem pour $AV$. Le MLP : $O(ND^2)$.</div>
+<div class="step"><b>③ Réseau dense.</b> Chaque sortie dépend de chaque entrée : $(ND)\times(ND)$ poids.</div>
+<div class="qed">∎</div>
+</div></details>
+<div class="box q"><div class="box-title">Peut-on vraiment empiler des couches de transformer ? (slide 19)</div>
+<details class="proof"><summary>Réponse</summary><div class="proof-body"><p>Oui, pour deux raisons. Formellement : une couche envoie $\R^{N\times D}$ dans $\R^{N\times D}$, donc la sortie d'une couche est une entrée valide pour la suivante (et le même $N$ : un vecteur par token, à chaque profondeur). En pratique : les connexions résiduelles (proposition (b)) et LayerNorm (proposition (c)) permettent d'entraîner des dizaines de couches sans que les gradients s'éteignent ni que les activations explosent. C'est l'empilement qui donne la loi d'échelle de la slide 5.</p></div></details></div>
+
+<!-- ===================================================================== -->
+<h2 id="order"><span class="num">5</span>L'ordre des tokens : équivariance et encodage positionnel</h2>
+<div class="sources"><a class="src slides" href="../Slides/9-transformers.pdf#page=16" target="_blank">Slides p.16–18</a><a class="src book" href="../Textbooks/Deep%20Learning%20-%20Foundations%20and%20Concepts.pdf#page=387" target="_blank">DL §12.1.9 Positional encoding</a></div>
+<div class="box road"><div class="box-title">Où on en est</div><div class="road-row"><span class="rk ok">Acquis</span><div>Une couche de transformer complète, empilable (§4). Ses poids sont les mêmes pour toutes les positions.</div></div><div class="road-row"><span class="rk q">Il manque</span><div>La couche ne sait pas <b>dans quel ordre</b> sont les tokens. Pourquoi, exactement ?</div></div><div class="road-row"><span class="rk go">Cette partie</span><div>Équivariance par permutation (preuve complète : le « Why? » de la slide 17) ; encodage positionnel sinusoïdal et ses propriétés (preuves).</div></div></div>
+<div class="vids"><div class="vids-title">▶ Vidéos<span>en anglais · s'ouvrent sur YouTube</span></div><div class="vids-grid"><a class="vid" href="https://www.youtube.com/watch?v=dichIcUZfOw" target="_blank" rel="noopener"><span class="vid-thumb">▶<img src="https://i.ytimg.com/vi/dichIcUZfOw/mqdefault.jpg" loading="lazy" alt="" onerror="this.remove()"></span><span class="vid-body"><span class="vid-ch">Hedu AI</span><span class="vid-t" style="display:block">Visual Guide to Transformer Neural Networks — Position Embeddings</span><span class="vid-why" style="display:block">Pourquoi des sinus et cosinus de fréquences différentes encodent la position.</span></span></a></div></div>
+
+<div class="box def"><div class="box-title">Équivariance (slide 17)</div>
+Une fonction $f$ est <b>équivariante</b> à une transformation $T$ si $f(Tx) = Tf(x)$ : $f$ respecte $T$ (on peut transformer avant ou après, c'est pareil). Elle est <b>invariante</b> si $f(Tx) = f(x)$. Ici $T$ est linéaire : une matrice de permutation $P$ qui réordonne les tokens, $X' = PX$. La slide affirme
+$$\mathrm{TransformerLayer}[PX] = P\,\mathrm{TransformerLayer}[X]\qquad\text{— pourquoi ?}$$
+</div>
+<div class="box thm"><div class="box-title">Théorème — une couche de transformer (sans masque, sans encodage de position) est équivariante par permutation</div>
+Pour toute matrice de permutation $P\in\R^{N\times N}$ et tous les poids : $\mathrm{TransformerLayer}[PX] = P\,\mathrm{TransformerLayer}[X]$. Par récurrence, c'est vrai aussi pour un empilement de couches.
+</div>
+<details class="proof"><summary>Preuve — complète, étape par étape</summary>
+<div class="proof-body">
+<div class="step"><b>⓪ Ce qu'est $P$.</b> $P$ a un seul 1 par ligne et par colonne : la ligne $n$ de $PX$ est la ligne $\pi(n)$ de $X$, pour une bijection $\pi$. $P$ est orthogonale : $P^\top P = I$. Et $PSP^\top$ réordonne <b>lignes et colonnes</b> de $S$ de la même façon : $(PSP^\top)_{nm} = S_{\pi(n)\pi(m)}$.</div>
+<div class="step"><b>① Les opérations ligne par ligne commutent avec $P$.</b> Si $g$ agit sur chaque ligne séparément avec la même fonction, $g(X) = [\varphi(x_1)^\top;\dots;\varphi(x_N)^\top]$, alors $g(PX)$ a pour ligne $n$ $\varphi(x_{\pi(n)})^\top$, qui est la ligne $n$ de $Pg(X)$. C'est le cas de : la multiplication à droite par une matrice ($XW$), l'ajout d'un biais à chaque ligne, le MLP, LayerNorm. Et l'addition aussi : $PA+PB = P(A+B)$.</div>
+<div class="step"><b>② Le softmax ligne par ligne commute avec une permutation simultanée des lignes et des colonnes.</b> $\mathrm{Softmax}[PSP^\top]_{nm} = \frac{\exp S_{\pi(n)\pi(m)}}{\sum_{m'}\exp S_{\pi(n)\pi(m')}} = \frac{\exp S_{\pi(n)\pi(m)}}{\sum_{l}\exp S_{\pi(n)l}}$ (on a posé $l = \pi(m')$, qui parcourt tous les indices puisque $\pi$ est une bijection). C'est $\mathrm{Softmax}[S]_{\pi(n)\pi(m)} = (P\,\mathrm{Softmax}[S]\,P^\top)_{nm}$.</div>
+<div class="step"><b>③ Une tête d'attention.</b> Avec $X' = PX$ : $Q' = PXW^{(q)} = PQ$, $K' = PK$, $V' = PV$ par ①. Donc $Q'K'^\top/\sqrt{D_k} = P\,\frac{QK^\top}{\sqrt{D_k}}\,P^\top$, et par ② :
+$$\mathrm{Attention}(Q',K',V') = P\,\mathrm{Softmax}\Big[\frac{QK^\top}{\sqrt{D_k}}\Big]P^\top\,PV = P\,\mathrm{Softmax}\Big[\frac{QK^\top}{\sqrt{D_k}}\Big]V = P\,\mathrm{Attention}(Q,K,V),$$
+car $P^\top P = I$.</div>
+<div class="step"><b>④ Plusieurs têtes.</b> Chaque tête vérifie $H_h' = PH_h$ ; la concaténation se fait ligne par ligne, donc $\mathrm{Concat}[PH_1,\dots,PH_H] = P\,\mathrm{Concat}[H_1,\dots,H_H]$, puis la multiplication par $W^{(o)}$ commute avec $P$ (①) : $Y(PX) = PY(X)$.</div>
+<div class="step"><b>⑤ Le reste de la couche.</b> $Z' = \mathrm{LayerNorm}[PY(X)+PX] = P\,\mathrm{LayerNorm}[Y(X)+X] = PZ$ (①), puis $\tilde X' = \mathrm{LayerNorm}[\mathrm{MLP}[PZ]+PZ] = P\tilde X$ (①).</div>
+<div class="step"><b>⑥ Empilement.</b> Si $f$ et $g$ sont équivariantes, $f(g(PX)) = f(Pg(X)) = Pf(g(X))$.</div>
+<div class="qed">∎</div>
+</div></details>
+<div class="why">L'argument ne tient qu'à deux choses : les <b>mêmes poids</b> pour toutes les positions, et une attention qui ne regarde que le <b>contenu</b> des tokens (les produits scalaires), jamais leur indice. C'est exactement ce qui rend le transformer parallèle et indépendant de la longueur, et c'est aussi ce qui le rend aveugle à l'ordre.</div>
+<div class="box thm"><div class="box-title">Corollaire — sans position, deux phrases qui sont des permutations l'une de l'autre sont indiscernables par tout résumé symétrique</div>
+« The food was bad, not good at all » s'obtient à partir de « The food was good, not bad at all » en échangeant deux tokens : $X_A = PX_B$. Alors $\tilde X_A = P\tilde X_B$, donc chaque mot a la même représentation dans les deux phrases, et toute quantité invariante par permutation (moyenne, somme, maximum des lignes) est identique.
+</div>
+<p>La scène fait tourner une vraie couche (2 têtes, résidus, LayerNorm, MLP) sur les deux phrases. L'écart $\max|\mathrm{TL}[PX]-P\,\mathrm{TL}[X]|$ est de l'ordre de $10^{-16}$, l'erreur d'arrondi des flottants :</p>
+<div data-scene="tf-perm"></div>
+
+<div class="box def"><div class="box-title">Encodage positionnel (slide 18)</div>
+On ajoute à chaque token un vecteur qui dépend de sa position : $\tilde x_n = x_n+r_n$.
+<ul><li>✓ le transformer sait maintenant où est chaque token : les deux phrases sur la nourriture ont des représentations différentes ;</li><li>le modèle et les plongements de tokens sont entraînés <b>ensemble</b>, pour utiliser l'information combinée « token + position ».</li></ul>
+</div>
+<div class="box def"><div class="box-title">Un choix de $r_n$ : l'encodage sinusoïdal <span class="hint">DL éq. 12.25 · Vaswani et al. 2017</span></div>
+On veut un encodage <b>unique</b> pour chaque position, <b>borné</b>, qui se <b>généralise</b> à des séquences plus longues que celles de l'entraînement, et qui exprime la <b>distance</b> entre deux positions de la même façon partout (DL §12.1.9). Pour $D$ pair et une base $b$ (DL : $b = 30$ dans sa figure ; l'article original : $b = 10\,000$), avec la fréquence $\omega_j = b^{-2j/D}$ :
+$$r_{n,2j} = \sin(n\,\omega_j),\qquad r_{n,2j+1} = \cos(n\,\omega_j),\qquad j = 0,\dots,\tfrac D2-1.$$
+Les premières coordonnées oscillent vite, les dernières lentement, comme les bits d'un compteur binaire (bit de poids faible rapide), mais en continu et dans $[-1,1]$.
+</div>
+<div class="box thm"><div class="box-title">Proposition — un décalage de $k$ positions est une application linéaire qui ne dépend que de $k$, et $r_n^\top r_m$ ne dépend que de $n-m$ <span class="hint">DL ex. 12.10 · hors slides</span></div>
+Il existe une matrice $M_k$ (orthogonale, diagonale par blocs $2\times2$) telle que $r_{n+k} = M_k\,r_n$ pour tout $n$. De plus $r_n^\top r_m = \sum_{j}\cos\big((n-m)\,\omega_j\big)$.
+</div>
+<details class="proof"><summary>Preuve</summary>
+<div class="proof-body">
+<div class="step"><b>① Une paire de coordonnées.</b> Notons $u_n = (\sin n\omega,\ \cos n\omega)$ pour une fréquence $\omega$. Les formules d'addition donnent
+$$\sin((n+k)\omega) = \sin n\omega\cos k\omega+\cos n\omega\sin k\omega,\qquad\cos((n+k)\omega) = \cos n\omega\cos k\omega-\sin n\omega\sin k\omega,$$
+soit $u_{n+k} = R_ku_n$ avec $R_k = \begin{pmatrix}\cos k\omega&\sin k\omega\\-\sin k\omega&\cos k\omega\end{pmatrix}$, une rotation qui ne dépend que de $k$ (pas de $n$).</div>
+<div class="step"><b>② Toutes les paires.</b> On empile : $M_k = \mathrm{diag}(R_k^{(0)},\dots,R_k^{(D/2-1)})$ avec la fréquence $\omega_j$ dans le bloc $j$. Chaque bloc est orthogonal, donc $M_k$ aussi.</div>
+<div class="step"><b>③ Produit scalaire.</b> Pour une paire : $\sin n\omega\sin m\omega+\cos n\omega\cos m\omega = \cos((n-m)\omega)$. On somme sur les paires.</div>
+<div class="qed">∎</div>
+</div></details>
+<div class="why">C'est pour cela qu'il faut <b>à la fois</b> des sinus et des cosinus : avec des sinus seuls, $\sin((n+k)\omega)$ n'est pas une fonction linéaire de $\sin(n\omega)$ seul. Comme $r_{n+k} = M_kr_n$ et que les requêtes et clés sont des applications linéaires, une tête peut apprendre à regarder « $k$ positions en arrière » avec les mêmes poids à toutes les positions (c'est ce que fait le modèle entraîné au §7).</div>
+<div data-scene="tf-pe"></div>
+<details class="objs" open><summary>Les objets en jeu</summary><dl>
+<dt>$P$</dt><dd><span class="ty">permutation des tokens</span>Réordonner l'entrée réordonne la sortie de la même façon : rien d'autre ne change. La couche traite un <b>ensemble</b> de tokens, pas une suite.</dd>
+<dt>$r_n$</dt><dd><span class="ty">« adresse » de la position $n$</span>Ajoutée (et non concaténée) pour garder la dimension $D$. En grande dimension, deux vecteurs pris au hasard sont presque orthogonaux, ce qui permet au réseau de séparer « quel mot » et « où » (DL §12.1.9).</dd>
+<dt>$M_k$</dt><dd><span class="ty">rotation de chaque paire</span>Le décalage relatif s'exprime de la même façon partout : la distance entre deux tokens compte plus que leur position absolue.</dd>
+<dt>encodage appris</dt><dd><span class="ty">l'alternative</span>Un vecteur de paramètres par position, appris avec le reste. Simple et efficace, mais rien n'est appris pour des positions au-delà de la longueur d'entraînement.</dd>
+</dl></details>
+<div class="box q"><div class="box-title">Pourquoi $\mathrm{TransformerLayer}[PX] = P\,\mathrm{TransformerLayer}[X]$ ? (slide 17, « Why? »)</div>
+<details class="proof"><summary>Réponse</summary><div class="proof-body"><p>Toutes les opérations de la couche sont de deux types : (1) des opérations <b>ligne par ligne</b> avec les mêmes poids pour chaque token (les projections $XW$, le MLP, LayerNorm, les additions résiduelles), qui commutent avec n'importe quel réordonnancement des lignes ; (2) l'attention, dont les scores $QK^\top$ deviennent $PQK^\top P^\top$ quand on permute : lignes et colonnes sont permutées de la même façon, le softmax ligne par ligne s'en accommode ($\mathrm{Softmax}[PSP^\top] = P\,\mathrm{Softmax}[S]P^\top$), et le $P^\top$ restant s'annule avec le $P$ de $PV$ car $P^\top P = I$. Aucune opération n'utilise l'indice d'un token, seulement son contenu (théorème ci-dessus).</p></div></details></div>
+<div class="box q"><div class="box-title">Pourquoi ajouter $r_n$ plutôt que le concaténer à $x_n$ ?</div>
+<details class="proof"><summary>Réponse</summary><div class="proof-body"><p>Concaténer ferait passer la dimension de $D$ à $2D$ (ou $D+D_r$), donc augmenterait la taille de toutes les matrices $W$ et le coût de toutes les couches. Ajouter garde $D$. On pourrait craindre que la somme « mélange » l'identité du mot et sa position ; mais en grande dimension, des vecteurs sans lien sont presque orthogonaux, et les projections apprises peuvent séparer les deux informations. De plus, après une projection linéaire, concaténer ou ajouter se ressemblent : $W\begin{pmatrix}x\\r\end{pmatrix} = W_1x+W_2r$, ce qui revient à ajouter à $W_1x$ un encodage transformé $W_2r$.</p></div></details></div>
+
+<!-- ===================================================================== -->
+<h2 id="decoder"><span class="num">6</span>Le transformer décodeur (« decoder-only »)</h2>
+<div class="sources"><a class="src slides" href="../Slides/9-transformers.pdf#page=19" target="_blank">Slides p.19–21</a><a class="src book" href="../Textbooks/Deep%20Learning%20-%20Foundations%20and%20Concepts.pdf#page=399" target="_blank">DL §12.3.1</a></div>
+<div class="box road"><div class="box-title">Où on en est</div><div class="road-row"><span class="rk ok">Acquis</span><div>Une pile de couches qui transforme $N$ tokens (avec leur position) en $N$ vecteurs (§4–5).</div></div><div class="road-row"><span class="rk q">Il manque</span><div>Transformer ces vecteurs en lois $p(x_n\mid x_{\lt n})$, <b>sans</b> que la position $n$ puisse voir les tokens qu'elle doit prédire.</div></div><div class="road-row"><span class="rk go">Cette partie</span><div>Architecture GPT : ⟨start⟩, plongement + position, couches masquées, sortie linéaire + softmax ; la causalité (preuve).</div></div></div>
+<div class="vids"><div class="vids-title">▶ Vidéos<span>en anglais · s'ouvrent sur YouTube</span></div><div class="vids-grid"><a class="vid" href="https://www.youtube.com/watch?v=bQ5BoolX9Ag" target="_blank" rel="noopener"><span class="vid-thumb">▶<img src="https://i.ytimg.com/vi/bQ5BoolX9Ag/mqdefault.jpg" loading="lazy" alt="" onerror="this.remove()"></span><span class="vid-body"><span class="vid-ch">StatQuest</span><span class="vid-t" style="display:block">Decoder-Only Transformers, ChatGPTs specific Transformer, Clearly Explained!!!</span><span class="vid-why" style="display:block">Exactement l'architecture des slides 20–21, attention masquée comprise.</span></span></a></div></div>
+
+<div class="box def"><div class="box-title">Modèles « decoder-only » (slide 20)</div>
+Le transformer original (traduction) a un <b>encodeur</b>, qui lit la phrase source, et un <b>décodeur</b>, qui écrit la traduction ; le décodeur consulte l'encodeur par une <b>attention croisée</b> (requêtes venant du décodeur, clés et valeurs venant de l'encodeur). Les modèles decoder-only (GPT) <b>omettent</b> cette attention croisée encodeur–décodeur : il ne reste qu'une pile de couches de self-attention <b>masquée</b>.
+</div>
+<div class="box def"><div class="box-title">Implémentation (slide 21, DL fig. 12.15)</div>
+<ol>
+<li><b>Entrée décalée</b> : $\langle\text{start}\rangle, x_1,\dots,x_N$. Chaque token passe par un <b>plongement</b> (une ligne d'une matrice apprise $|\mathcal V|\times D$), auquel on ajoute l'<b>encodage positionnel</b>.</li>
+<li>$L$ <b>couches de transformer masquées</b> : dans chaque attention, $a_{nm} = 0$ dès que $m>n$ (un token ne regarde pas les tokens suivants). En pratique, on met les scores correspondants à $-\infty$ avant le softmax, qui renormalise automatiquement les poids restants.</li>
+<li>À chaque position, une couche <b>LSM</b> (linéaire + softmax, poids partagés entre positions) : $y_n = \mathrm{softmax}\big(\tilde x_n^{(L)\top}W^{(p)}\big)$, une loi sur $\mathcal V$.</li>
+</ol>
+Avec le décalage, la sortie à la position de ⟨start⟩ prédit $x_1$, celle de $x_1$ prédit $x_2$, …, celle de $x_N$ prédit $x_{N+1}$.
+</div>
+<div class="box thm"><div class="box-title">Proposition — avec l'attention masquée, la sortie $n$ ne dépend que des entrées $1,\dots,n$</div>
+Notons $X^{(\ell)}$ la sortie de la couche $\ell$. Pour tout $\ell$ et tout $n$, la ligne $x_n^{(\ell)}$ est une fonction des seules lignes $x_1^{(0)},\dots,x_n^{(0)}$. Donc $y_n$ ne dépend que de ⟨start⟩, $x_1,\dots,x_{n-1}$ : c'est une loi conditionnelle $p(x_n\mid x_{\lt n})$ légitime.
+</div>
+<details class="proof"><summary>Preuve — par récurrence sur les couches</summary>
+<div class="proof-body">
+<div class="step"><b>① Initialisation.</b> $x_n^{(0)} = \text{plongement}(x_n)+r_n$ ne dépend que du token $n$.</div>
+<div class="step"><b>② L'attention masquée.</b> Supposons la propriété vraie pour $X^{(\ell-1)}$. Les vecteurs $q_n,k_m,v_m$ ne dépendent que de la ligne correspondante. La sortie $y_n = \sum_{m\le n}a_{nm}v_m$ (les $a_{nm}$ avec $m>n$ sont nuls) ne fait intervenir que $q_n$ et les $k_m,v_m$ pour $m\le n$, donc les lignes $m\le n$ de $X^{(\ell-1)}$, qui ne dépendent (hypothèse) que des entrées d'indice $\le m\le n$.</div>
+<div class="step"><b>③ Le reste de la couche.</b> Résidus, LayerNorm, MLP et LSM agissent ligne par ligne : la ligne $n$ de la sortie ne dépend que de la ligne $n$ de leur entrée. La propriété passe à $X^{(\ell)}$.</div>
+<div class="step"><b>④ Le décalage.</b> La position $n$ de l'entrée contient $x_{n-1}$ (la position 1 contient ⟨start⟩), donc les entrées $1,\dots,n$ sont ⟨start⟩, $x_1,\dots,x_{n-1}$ : la sortie $y_n$, qui doit prédire $x_n$, ne le voit pas.</div>
+<div class="qed">∎</div>
+</div></details>
+<p>Dans la scène, deux couches masquées aléatoires traitent « ⟨start⟩ I swam across the river… » ; on remplace un mot par « lake » et on regarde quelles sorties bougent :</p>
+<div data-scene="tf-mask"></div>
+<details class="objs" open><summary>Les objets en jeu</summary><dl>
+<dt>masque causal</dt><dd><span class="ty">matrice triangulaire</span>Les poids au-dessus de la diagonale sont forcés à 0. Le mot « causal » : le présent ne dépend que du passé.</dd>
+<dt>⟨start⟩</dt><dd><span class="ty">décalage d'un cran</span>Il donne une entrée à la position qui prédit $x_1$, et aligne chaque sortie sur le token qu'elle doit prédire (DL §12.3.1).</dd>
+<dt>LSM</dt><dd><span class="ty">classifieur softmax</span>La même régression softmax (chapitre 2) à chaque position : $|\mathcal V|$ classes, appliquée au vecteur de la dernière couche.</dd>
+<dt>une passe = $N$ prédictions</dt><dd><span class="ty">parallélisme</span>Grâce au masque, une seule passe calcule les $N$ conditionnelles $p(x_n\mid x_{\lt n})$ à la fois, au lieu de $N$ passes sur des préfixes.</dd>
+</dl></details>
+<div class="box q"><div class="box-title">Pourquoi faut-il masquer l'attention ? (slide 21)</div>
+<details class="proof"><summary>Réponse</summary><div class="proof-body"><p>Pour entraîner sur toutes les positions en une seule passe, on donne au réseau toute la séquence, alors que la sortie $n$ doit prédire $x_n$ qui figure aussi dans l'entrée (position $n+1$). Sans masque, l'attention peut aller lire $x_n$ et le recopier : la perte d'entraînement tombe à presque 0, mais le modèle est inutilisable pour générer, puisque le token suivant n'existe pas encore au moment de la génération (DL §12.3.1). Le masque rend la sortie $n$ fonction du seul passé (proposition ci-dessus) : ce que le réseau voit à l'entraînement est exactement ce qu'il verra en générant.</p></div></details></div>
+<div class="box q"><div class="box-title">Générer token par token, n'est-ce pas très coûteux ?</div>
+<details class="proof"><summary>Réponse</summary><div class="proof-body"><p>À chaque nouveau token, il faut une passe sur la séquence allongée. Mais grâce au masque, les représentations des positions déjà présentes <b>ne changent pas</b> quand on ajoute un token à la fin (proposition ci-dessus : la ligne $m$ ne dépend que des entrées $\le m$). On garde donc en mémoire leurs clés et valeurs (le « KV cache ») et l'on ne calcule que la nouvelle ligne : $O(nD)$ pour l'attention de la nouvelle position, au lieu de tout recalculer.</p></div></details></div>
+
+<!-- ===================================================================== -->
+<h2 id="ssl"><span class="num">7</span>Apprendre sans étiquettes : la prédiction du token suivant</h2>
+<div class="sources"><a class="src slides" href="../Slides/9-transformers.pdf#page=23" target="_blank">Slides p.23–24</a><a class="src book" href="../Textbooks/Deep%20Learning%20-%20Foundations%20and%20Concepts.pdf#page=399" target="_blank">DL §12.3.1</a><a class="src book" href="../Textbooks/Deep%20Learning%20-%20Foundations%20and%20Concepts.pdf#page=402" target="_blank">DL §12.3.2 Sampling</a></div>
+<div class="box road"><div class="box-title">Où on en est</div><div class="road-row"><span class="rk ok">Acquis</span><div>Un décodeur qui calcule toutes les lois $p_\theta(x_n\mid x_{\lt n})$ en une passe, sans tricher (§6).</div></div><div class="road-row"><span class="rk q">Il manque</span><div>Une perte pour apprendre $\theta$, avec seulement du texte brut (aucune étiquette humaine).</div></div><div class="road-row"><span class="rk go">Cette partie</span><div>Apprentissage auto-supervisé ; la prédiction du token suivant (NTP) est une classification et un maximum de vraisemblance (preuve) ; un transformer entraîné en direct ; stratégies de génération.</div></div></div>
+<div class="vids"><div class="vids-title">▶ Vidéos<span>en anglais · s'ouvrent sur YouTube</span></div><div class="vids-grid"><a class="vid" href="https://www.youtube.com/watch?v=kCc8FmEb1nY" target="_blank" rel="noopener"><span class="vid-thumb">▶<img src="https://i.ytimg.com/vi/kCc8FmEb1nY/mqdefault.jpg" loading="lazy" alt="" onerror="this.remove()"></span><span class="vid-body"><span class="vid-ch">Andrej Karpathy</span><span class="vid-t" style="display:block">Let's build GPT: from scratch, in code, spelled out.</span><span class="vid-why" style="display:block">Coder un décodeur et l'entraîner par prédiction du token suivant (2 h, en PyTorch).</span></span></a><a class="vid" href="https://www.youtube.com/watch?v=zduSFxRajkE" target="_blank" rel="noopener"><span class="vid-thumb">▶<img src="https://i.ytimg.com/vi/zduSFxRajkE/mqdefault.jpg" loading="lazy" alt="" onerror="this.remove()"></span><span class="vid-body"><span class="vid-ch">Andrej Karpathy</span><span class="vid-t" style="display:block">Let's build the GPT Tokenizer</span><span class="vid-why" style="display:block">D'où viennent les tokens : découper un texte en éléments d'un vocabulaire $\mathcal V$.</span></span></a></div></div>
+
+<div class="box def"><div class="box-title">Apprentissage auto-supervisé (slide 23)</div>
+L'apprentissage auto-supervisé est un apprentissage non supervisé qui sait « <b>générer lui-même</b> » des étiquettes, et ramène ainsi la tâche à de l'apprentissage supervisé. Exemple (Gidaris et al., 2018) : on fait tourner une image de $0°$, $90°$, $180°$ ou $270°$ et on entraîne un réseau à <b>prédire l'angle</b> ; l'étiquette est connue puisqu'on a fait la rotation soi-même, et pour réussir, le réseau doit apprendre ce qu'est le « haut » d'un objet.
+</div>
+<div class="box def"><div class="box-title">Prédiction du token suivant (NTP, slide 24)</div>
+Soit une séquence $x_1,\dots,x_T$ dont on observe une sous-séquence $x_1,\dots,x_t$. Le but est de prédire le token suivant $\hat x_{t+1}$, la supervision $x_{t+1}$ étant lue dans la séquence d'origine. Au fond, la NTP est une <b>classification</b> :
+<ul><li>prédire $\hat x_1$ à partir d'un token de début ;</li><li>prédire $\hat x_2$ à partir de $x_1$ ;</li><li>prédire $\hat x_3$ à partir de $(x_1,x_2)$ ; …</li></ul>
+Elle <b>passe à l'échelle</b> : elle s'applique à de nombreuses modalités (texte, images, vidéo), dès qu'on sait les découper en tokens.
+</div>
+<div class="box thm"><div class="box-title">Proposition — la perte de NTP est la log-vraisemblance négative de la séquence</div>
+Avec la perte d'entropie croisée à chaque position,
+$$\mathcal J(\theta) = \sum_{t=0}^{T-1}-\log p_\theta(x_{t+1}\mid x_1,\dots,x_t) = -\log p_\theta(x_1,\dots,x_T).$$
+Minimiser la perte moyenne de NTP sur un corpus, c'est donc maximiser la vraisemblance du modèle autorégressif, c'est-à-dire (pour un grand corpus) minimiser $\mathrm{KL}(p_{\text{data}}\,\|\,p_\theta)$ sur les séquences.
+</div>
+<details class="proof"><summary>Preuve</summary>
+<div class="proof-body">
+<div class="step"><b>① Chaque position est une classification.</b> La sortie $y_{t+1} = p_\theta(\cdot\mid x_{\le t})$ est une loi sur les $|\mathcal V|$ classes, la « bonne classe » est $x_{t+1}$. L'entropie croisée avec la cible one-hot vaut $-\sum_{v\in\mathcal V}\mathbb 1[v = x_{t+1}]\log y_{t+1,v} = -\log p_\theta(x_{t+1}\mid x_{\le t})$ (chapitre 2).</div>
+<div class="step"><b>② Somme des pertes.</b> $\sum_t-\log p_\theta(x_{t+1}\mid x_{\le t}) = -\log\prod_tp_\theta(x_{t+1}\mid x_{\le t}) = -\log p_\theta(x_1,\dots,x_T)$ par la règle de la chaîne (§1).</div>
+<div class="step"><b>③ Sur un corpus.</b> Les séquences étant supposées i.i.d., la perte moyenne est $-\frac1S\sum_s\log p_\theta(\text{séquence}_s)$ : l'opposé de la log-vraisemblance moyenne. Le chapitre 7 (§2) a montré que la maximiser revient, pour un grand corpus, à minimiser $\mathrm{KL}(p_{\text{data}}\,\|\,p_\theta)$.</div>
+<div class="qed">∎</div>
+</div></details>
+<div class="why">D'où le titre des slides, « Density Estimation via Transformers » : un modèle de langage est un estimateur de densité sur les séquences, entraîné par maximum de vraisemblance, comme le VAE du chapitre 7 — mais ici la vraisemblance se calcule <b>exactement</b>, sans ELBO, grâce à la factorisation autorégressive.</div>
+<p>Pour voir l'apprentissage, il faut une tâche où le passé lointain compte. Chaque séquence d'entraînement est un motif de $P$ lettres tirées au hasard parmi 8, répété deux fois (« C A F B E C A F B E »). La première moitié est imprévisible ; la seconde est entièrement déterminée, mais seulement si l'on va chercher la lettre $P$ positions plus tôt, ce qu'aucun modèle de Markov d'ordre $\lt P$ ne peut faire. Le modèle : plongement + position, <b>une</b> tête d'attention masquée avec résidu, puis LSM.</p>
+<div data-scene="tf-train"></div>
+<details class="objs" open><summary>Les objets en jeu</summary><dl>
+<dt>la cible $x_{t+1}$</dt><dd><span class="ty">étiquette gratuite</span>Lue dans le texte lui-même : un corpus de $T$ tokens fournit $T$ exemples de classification, sans annotateur.</dd>
+<dt>$-\log p_\theta(x_{t+1}\mid x_{\le t})$</dt><dd><span class="ty">entropie croisée</span>Vaut $\ln|\mathcal V|$ pour une prédiction uniforme ; 0 pour une prédiction parfaite et certaine. Dans la scène, $\ln 8\approx2{,}08$.</dd>
+<dt>pré-entraînement</dt><dd><span class="ty">« pretraining »</span>Entraîner par NTP sur un très grand corpus. Le modèle obtenu sert ensuite de base (on l'ajuste, ou on lui pose des questions sous forme de texte).</dd>
+</dl></details>
+<div class="box def"><div class="box-title">Générer : choisir le token suivant <span class="hint">hors slides · DL §12.3.2</span></div>
+Une fois $p_\theta(\cdot\mid x_{\le t})$ calculée, on choisit $x_{t+1}$, on l'ajoute à l'entrée et on recommence.
+<ul>
+<li><b>Glouton</b> (greedy) : le token le plus probable. Déterministe ; coût linéaire en la longueur.</li>
+<li><b>Échantillonnage</b> : on tire $x_{t+1}\sim p_\theta(\cdot\mid x_{\le t})$, souvent après avoir divisé les scores par une <b>température</b> (basse : proche du glouton ; haute : plus varié), ou en ne gardant que les tokens les plus probables (top-$k$, top-$p$).</li>
+<li><b>Recherche en faisceau</b> (beam search) : on garde les $B$ meilleures suites partielles à chaque pas.</li>
+</ul>
+</div>
+<div class="box thm"><div class="box-title">Proposition — le choix glouton ne donne pas forcément la séquence la plus probable <span class="hint">DL ex. 12.15</span></div>
+Exemple sur deux tokens : $p(x_1 = \mathrm A) = 0{,}6$, $p(x_1 = \mathrm B) = 0{,}4$ ; sachant A, $x_2$ est uniforme sur 3 tokens ($1/3$ chacun) ; sachant B, $p(x_2 = \mathrm C\mid\mathrm B) = 0{,}9$. Le glouton choisit A puis un token de probabilité $1/3$ : séquence de probabilité $0{,}6\times\frac13 = 0{,}2$. Or $p(\mathrm B,\mathrm C) = 0{,}4\times0{,}9 = 0{,}36>0{,}2$.
+</div>
+<details class="proof"><summary>Preuve</summary>
+<div class="proof-body">
+<div class="step"><b>① Le glouton.</b> Au premier pas, $\max(0{,}6;0{,}4)$ : A. Au second, tous les tokens valent $1/3$ : la meilleure suite commençant par A a la probabilité $0{,}6/3 = 0{,}2$.</div>
+<div class="step"><b>② Une meilleure séquence.</b> $p(\mathrm B,\mathrm C) = p(\mathrm B)\,p(\mathrm C\mid\mathrm B) = 0{,}36$ par la règle de la chaîne. Le glouton ne regarde pas plus loin que le pas courant ; trouver le maximum exact demande d'explorer $|\mathcal V|^T$ séquences.</div>
+<div class="qed">∎</div>
+</div></details>
+
+<!-- ===================================================================== -->
+<h2 id="summary"><span class="num">8</span>Résumé &amp; questions des slides</h2>
+<div class="box thm"><div class="box-title">Tout le chapitre en une chaîne</div>
+$$\underbrace{p(x_{1:N}) = \textstyle\prod_np(x_n\mid x_{\lt n})}_{\text{§1}}\ \to\ \underbrace{y_n = \textstyle\sum_ma_{nm}x_m}_{\text{§2}}\ \to\ \underbrace{\mathrm{Softmax}\big[QK^\top/\sqrt{D_k}\big]V,\ H\text{ têtes}}_{\text{§3}}\ \to\ \underbrace{\mathrm{LN}[\mathrm{MLP}[Z]+Z],\ Z = \mathrm{LN}[Y(X)+X]}_{\text{§4}}$$
+$$\to\ \underbrace{\mathrm{TL}[PX] = P\,\mathrm{TL}[X]\ \Rightarrow\ \tilde x_n = x_n+r_n}_{\text{§5}}\ \to\ \underbrace{a_{nm} = 0\ (m>n),\ \text{LSM}}_{\text{§6}}\ \to\ \underbrace{\textstyle\sum_t-\log p_\theta(x_{t+1}\mid x_{\le t}) = -\log p_\theta(x_{1:T})}_{\text{§7}}$$
+</div>
+<div class="box def"><div class="box-title">Les cinq mécanismes d'attention des slides</div>
+<div class="notation-wrap"><table class="notation">
+<thead><tr><th>#</th><th>Formule</th><th>✓ gagne</th><th>✗ manque</th></tr></thead>
+<tbody>
+<tr><td>1 (p.9)</td><td>$y_n = \sum_ma_{nm}x_m$, $a$ fixés</td><td>se concentrer sur les entrées liées</td><td>coefficients non adaptatifs</td></tr>
+<tr><td>2 (p.10)</td><td>$\mathrm{Softmax}[XX^\top]X$</td><td>adaptatifs</td><td>non apprenables</td></tr>
+<tr><td>3 (p.11)</td><td>$\mathrm{Softmax}[XUU^\top X^\top]XU$</td><td>apprenables</td><td>scores symétriques</td></tr>
+<tr><td>4 (p.12)</td><td>$\mathrm{Softmax}[QK^\top]V$</td><td>asymétriques</td><td>gradient évanescent</td></tr>
+<tr><td>5 (p.14)</td><td>$\mathrm{Softmax}[QK^\top/\sqrt{D_k}]V$</td><td>pas de saturation</td><td>une seule loi par requête</td></tr>
+<tr><td>multi-têtes (p.15)</td><td>$\mathrm{Concat}[H_1,\dots,H_H]W^{(o)}$</td><td>plusieurs lois par requête</td><td>pas de non-linéarité par position</td></tr>
+<tr><td>couche (p.16)</td><td>+ MLP, résidus, LayerNorm</td><td>expressive, entraînable</td><td>équivariante (aveugle à l'ordre)</td></tr>
+<tr><td>position (p.18)</td><td>$\tilde x_n = x_n+r_n$</td><td>sensible à l'ordre</td><td>—</td></tr>
+</tbody></table></div>
+</div>
+<div class="box intu"><div class="box-title">Conclusion (slide 26)</div>
+Nous avons vu une nouvelle architecture de réseau de neurones : le <b>transformer</b>. Il modélise des <b>densités conditionnelles</b> $p(x_t\mid x_1,\dots,x_{t-1})$. Apprendre (= pré-entraîner) un transformer est extrêmement simple : la prédiction du token suivant, c'est résoudre une suite de problèmes de classification.
+</div>
+<div class="box q"><div class="box-title">En quel sens un transformer est-il un estimateur de densité ? (slides 3, 26)</div>
+<details class="proof"><summary>Réponse</summary><div class="proof-body"><p>Il calcule, pour tout préfixe, la loi du token suivant $p_\theta(x_t\mid x_{\lt t})$. Par la règle de la chaîne, le produit de ces conditionnelles est une loi jointe $p_\theta(x_1,\dots,x_T)$ sur les séquences : on peut l'<b>évaluer</b> exactement (multiplier les probabilités lues en sortie) et l'<b>échantillonner</b> (générer token par token). L'entraînement par NTP maximise exactement sa vraisemblance (§7). Ce sont les deux usages d'un modèle de densité du chapitre 7, sans l'intégrale intraitable du VAE.</p></div></details></div>
+<div class="box q"><div class="box-title">Pourquoi la NTP est-elle de la classification, alors qu'on « génère » ? (slide 24)</div>
+<details class="proof"><summary>Réponse</summary><div class="proof-body"><p>À l'entraînement, chaque position est un problème de classification ordinaire : l'entrée est le préfixe $x_{\le t}$, la classe est $x_{t+1}\in\mathcal V$, la sortie est un softmax sur $|\mathcal V|$ classes et la perte est l'entropie croisée (exactement la régression softmax du chapitre 2, appliquée à une représentation apprise). La génération n'apparaît qu'à l'utilisation : on tire un token dans la loi prédite, on l'ajoute au préfixe, et on repose la question.</p></div></details></div>
+<div class="box q"><div class="box-title">Pourquoi un transformer s'entraîne-t-il plus vite qu'un RNN ? (slide 5)</div>
+<details class="proof"><summary>Réponse</summary><div class="proof-body"><p>Un RNN calcule son état $z_t$ à partir de $z_{t-1}$ : les positions se traitent l'une après l'autre, et l'information de la position 1 doit traverser $t$ mises à jour pour atteindre la position $t$. Dans un transformer masqué, toutes les positions se calculent en même temps (des produits de matrices, parfaits pour un GPU), et chaque position atteint n'importe quel token passé en une seule étape d'attention. Le prix : un coût en $O(N^2)$ en la longueur de la séquence, au lieu de $O(N)$.</p></div></details></div>
+<div class="box q"><div class="box-title">Existe-t-il une meilleure architecture ? (slide 26)</div>
+<details class="proof"><summary>Réponse</summary><div class="proof-body"><p>C'est une question ouverte que pose la slide. Les pistes actuelles visent surtout le coût en $O(N^2)$ de l'attention pour les très longues séquences : attentions creuses ou « linéaires », modèles à espace d'états et RNN modernes (qui reviennent à un coût linéaire tout en s'entraînant en parallèle), mélanges d'experts (qui n'activent qu'une partie des paramètres par token). Mais la recette de base — un modèle autorégressif entraîné par prédiction du token suivant — reste la même quelle que soit l'architecture qui calcule $p_\theta(x_t\mid x_{\lt t})$.</p></div></details></div>
+<hr>
+<p class="c-dim" style="font-size:13px">Pour s'entraîner : <a href="exercises.html">exercices à trous</a> (filtre « 8 · Transformers »).</p>
+
+</div></main>
+</div>
+
+<script src="lib/katex/katex.min.js"></script>
+<script src="lib/katex/contrib/auto-render.min.js"></script>
+<script src="lib/three.min.js"></script>
+<script src="js/core/math.js"></script>
+<script src="js/core/plot2d.js"></script>
+<script src="js/core/scene3d.js"></script>
+<script src="js/core/ui.js"></script>
+<script src="js/tf/t0-common.js"></script>
+<script src="js/tf/t1-attn.js"></script>
+<script src="js/tf/t2-layer.js"></script>
+<script src="js/tf/t3-train.js"></script>
+<script>ML.page.boot();</script>
+</body>
+</html>

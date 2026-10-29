@@ -191,7 +191,7 @@
     const inFilter = c => (f.ch === 'all' || c.dataset.ch === f.ch) && (f.type === 'all' || c.dataset.type === f.type);
     const layout = order => { host.innerHTML = ''; let n = 0; order.forEach(c => { const done = EX.isDone(c.dataset.id), show = inFilter(c) && (f.st === 'all' || (f.st === 'done') === done); c.style.display = show ? '' : 'none'; if (show) { n++; c.querySelector('.ex-num').textContent = n; } host.appendChild(c); }); document.getElementById('ex-count').textContent = `${n} exercice(s)`; };
     // barres de progression : sélection courante (chapitre + type), puis détail par chapitre
-    const CH = { 1: '1 · linéaire', 2: '2 · logistique', 3: '3 · SVM', 4: '4 · sélection', 5: '5 · réseaux', 6: '6 · en ligne', 7: '7 · VAE' };
+    const CH = { 1: '1 · linéaire', 2: '2 · logistique', 3: '3 · SVM', 4: '4 · sélection', 5: '5 · réseaux', 6: '6 · en ligne', 7: '7 · VAE', 8: '8 · transformers' };
     const barHTML = (d, n) => `<span class="pbar"><i style="width:${n ? (100 * d / n).toFixed(1) : 0}%"></i></span>`;
     const progress = () => {
       const sel = cards.filter(inFilter), d = sel.filter(c => EX.isDone(c.dataset.id)).length;

@@ -19,6 +19,7 @@
     <a href="neural-networks.html">5 · Réseaux de neurones</a>
     <a href="online-learning.html">6 · Apprentissage en ligne</a>
     <a href="vae.html">7 · VAE</a>
+    <a href="transformers.html">8 · Transformers</a>
     <a href="exercises.html">Entraînement</a>
     <a class="local-only" href="homework.html">Devoirs</a>
   </nav>
@@ -92,12 +93,20 @@
       <p>Autoencodeur et objectif de reconstruction, autoencodeur linéaire = ACP (preuve), estimation de densité, modèle à variable latente, ELBO et écart $\mathrm{KL}(q\,\|\,p_\theta(z\mid x))$, encodeur amorti, astuce de reparamétrisation, KL gaussienne en forme close, VAE entraîné en direct. <b>8 scènes.</b></p>
     </div>
   </a>
+  <a class="card" href="transformers.html">
+    <canvas data-thumb="tf"></canvas>
+    <div class="card-body">
+      <div class="meta">Cours 18–19 · 11/5, 11/10 · DL ch. 12</div>
+      <h3>8 · Transformers</h3>
+      <p>Prédiction du token suivant et règle de la chaîne, modèle de Markov, les cinq versions de l'attention (preuves : scores symétriques, $\mathrm{Var}(q^\top k) = D_k$, saturation du softmax), multi-têtes, couche de transformer, équivariance par permutation (preuve), encodage positionnel, attention masquée, NTP = maximum de vraisemblance, mini-transformer entraîné en direct. <b>8 scènes.</b></p>
+    </div>
+  </a>
   <a class="card" href="exercises.html">
     <canvas data-thumb="quiz"></canvas>
     <div class="card-body">
       <div class="meta">Définitions · dérivations · calculs</div>
       <h3>Entraînement (textes à trous)</h3>
-      <p>153 exercices en anglais (ou en français), présentés comme un sujet d'examen (énoncé, preuve à trous, cases numérotées) : démonstrations du cours, définitions, questions sur les devoirs HW1–HW6, calculs à valeurs aléatoires. Réponses libres en LaTeX ou texte, corrigés détaillés, progression enregistrée.</p>
+      <p>169 exercices en anglais (ou en français), présentés comme un sujet d'examen (énoncé, preuve à trous, cases numérotées) : démonstrations du cours, définitions, questions sur les devoirs HW1–HW6, calculs à valeurs aléatoires. Réponses libres en LaTeX ou texte, corrigés détaillés, progression enregistrée.</p>
     </div>
   </a>
   <a class="card local-only" href="homework.html">
@@ -145,8 +154,8 @@
     ['15', '10/27', 'Dimension Reduction — PCA', 'HW9', [['PRML 12.1', PRML + 581]], 'todo'],
     ['16', '10/29', 'Density Estimation — VAE I', '', [['PRML 10.1', PRML + 482], ['DL ch. 19', DL + 574]], 'todo', 'vae.html'],
     ['17', '11/3', 'Density Estimation — VAE II', 'HW10', [['DL ch. 19', DL + 574]], 'todo', 'vae.html'],
-    ['18', '11/5', 'Density Estimation — Transformers I', '', [['DL ch. 12', null]], 'todo'],
-    ['19', '11/10', 'Density Estimation — Transformers II', 'HW11 : transformer for generation', [], 'todo'],
+    ['18', '11/5', 'Density Estimation — Transformers I', '', [['DL ch. 12', DL + 373]], 'todo', 'transformers.html'],
+    ['19', '11/10', 'Density Estimation — Transformers II', 'HW11 : transformer for generation', [['DL §12.3', DL + 398]], 'todo', 'transformers.html'],
     ['20', '11/12', 'Exam 2', '', [], 'exam'],
     ['21', '11/17', 'RL — MDP I', '', [['RL ch. 3', RL]], 'todo'],
     ['22', '11/19', 'RL — MDP II', 'HW12', [], 'todo'],
@@ -217,6 +226,16 @@
       for (let i = 0; i < 60; i++) { const z0 = -3 + 6 * i / 60, a = mu(z0), b = mu(z0 + 0.1); p.seg(a[0], a[1], b[0], b[1], { color: M.ramp(0.12 + 0.8 * (z0 + 3) / 6), width: 3 }); }
       const z = 2.2 * Math.sin(t * 0.6), m = mu(z); p.point(m[0], m[1], { color: '#ff8fb1', r: 6, glow: true });
       p.tex('vae', -3.3, 1.75, '\\log p_\\theta(x)\\ge\\mathcal L(x,\\theta,\\phi)', { color: '#ddd', anchor: 'left', size: 15 });
+    },
+    tf: (p, t) => {
+      // une matrice d'attention causale dont la diagonale décalée s'allume progressivement
+      const N = 7, k = 0.5 + 0.5 * Math.sin(t * 0.8);
+      for (let i = 0; i < N; i++) for (let j = 0; j < N; j++) {
+        const x = -1.2 + j * 0.62, y = 1.25 - i * 0.48;
+        const v = j > i ? -1 : j === Math.max(0, i - 3) ? 0.25 + 0.7 * k : (1 - k) / (i + 1) * 0.9;
+        p.rect(x, y - 0.44, x + 0.58, y, { color: '#000', width: 1, fill: v < 0 ? '#6b2a30' : M.ramp(0.08 + 0.9 * Math.sqrt(v)), fillAlpha: 1 });
+      }
+      p.tex('tf', -3.3, 1.75, '\\mathrm{Softmax}\\big[QK^\\top/\\sqrt{D_k}\\big]V', { color: '#ddd', anchor: 'left', size: 15 });
     },
     hw: (p, t) => {
       const w = [0.1, 11.8, -33.5, 21.9]; // cubique proche de sin 2πx sur [0,1], remis à l'échelle
