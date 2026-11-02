@@ -1,4 +1,4 @@
-/* Exercices à trous sur les devoirs HW1–HW6, format « sujet d'examen ».
+/* Exercices à trous sur les devoirs HW1–HW7, format « sujet d'examen ».
    Chaque exercice est autonome : cadre et données sont dans l'énoncé (aucune référence au sujet du devoir). */
 (function (ML) {
   'use strict';
@@ -491,6 +491,56 @@ I_2 = 1\ \Longrightarrow\ \hat y_2 &= 1,\qquad \ell(y_2,\hat y_2) = \blank{f}. &
       e: { kind: 'num', ans: 3 / 2, tex: '\\tfrac32' },
       f: { kind: 'num', ans: 4, tol: 0 },
       g: { kind: 'word', ans: ['aléatoire', 'aleatoire', 'random'], tex: 'aléatoire' },
+    } }, H),
+  // ------------------------------------------------------------------ HW7
+  Object.assign({ id: 'h7a', ch: 7, title: 'Reparamétrisation : échantillons et chemin du gradient', src: 'HW7 P1.(1)–(2)',
+    text: R`<p class="hyp"><b>Données.</b> Un encodeur sort $q(z\mid x) = \mathcal N(\mu,\sigma^2)$ avec $\mu = 1$ et $\sigma = 2$ (écart-type). On échantillonne par $\epsilon\sim\mathcal N(0,1)$, $z = \mu+\sigma\epsilon$.</p>
+<p><b>Calcul.</b></p>
+$$\begin{aligned}
+\epsilon = -1,\ 0,\ 1\ &\Longrightarrow\ z = \blank{a},\ \ \blank{b},\ \ \blank{c} &&\text{(i)}\\
+\frac{\partial z}{\partial\mu} &= \blank{d},\qquad\frac{\partial z}{\partial\sigma} = \blank{e}\quad(\epsilon\text{ fixé}) &&\text{(ii)}\\
+\text{si } z \text{ est traité comme une constante :}\quad\frac{\partial z}{\partial\mu} &= \blank{f}\ \text{ en rétropropagation.} &&\text{(iii)}
+\end{aligned}$$
+<p>Dans le cas (iii), aucun gradient venant de la reconstruction n'atteint les paramètres de l'encodeur. La reparamétrisation met le hasard dans $\epsilon$, dont la loi ne dépend pas des [[g]].</p>`,
+    blanks: {
+      a: { kind: 'num', ans: -1, tol: 0 }, b: { kind: 'num', ans: 1, tol: 0 }, c: { kind: 'num', ans: 3, tol: 0 },
+      d: { kind: 'num', ans: 1, tol: 0 },
+      e: { kind: 'expr', ans: [R`\epsilon`, 'epsilon', 'ε', R`\varepsilon`, 'eps'], tex: R`\epsilon` },
+      f: { kind: 'num', ans: 0, tol: 0 },
+      g: { kind: 'word', ans: ['paramètres', 'parametres', 'paramètres de l encodeur', 'parameters', 'paramètres de l\'encodeur'], tex: 'paramètres (de l\'encodeur)' },
+    } }, H),
+
+  Object.assign({ id: 'h7b', ch: 7, title: 'Un pas de gradient sur l\'encodeur, avec reparamétrisation', src: 'HW7 P2.(1)',
+    text: R`<p class="hyp"><b>Données.</b> $x_1 = -1$, $x_2 = 1$ ; $p(z) = \mathcal N(0,1)$, décodeur fixé $p(x\mid z) = \mathcal N(z,1)$, encodeur $q_a(z\mid x) = \mathcal N(ax,1)$ de seul paramètre $a$. Bruits $\epsilon_1 = \epsilon_2 = 0$, $z_i = ax_i+\epsilon_i$, et
+$$\hat J(a) = \tfrac12\textstyle\sum_i\big[\tfrac12(x_i-z_i)^2+\tfrac12(ax_i)^2\big],\quad g_{\text{rec}} = \tfrac12\sum_i(z_i-x_i)\frac{\partial z_i}{\partial a},\quad g_{\text{KL}} = a,\quad a_{\text{new}} = a-0{,}1(g_{\text{rec}}+g_{\text{KL}}).$$
+On part de $a = 0$.</p>
+<p><b>Calcul.</b></p>
+$$\begin{aligned}
+z_1 = z_2 &= \blank{a},\qquad\frac{\partial z_1}{\partial a} = \blank{b},\quad\frac{\partial z_2}{\partial a} = 1 &&\text{(i)}\\
+g_{\text{rec}} &= \blank{c},\qquad g_{\text{KL}} = \blank{d} &&\text{(ii)}\\
+a_{\text{new}} &= \blank{e},\qquad a_{\text{new}}x_1 = \blank{f} &&\text{(iii)}\\
+\hat J(a) = \tfrac12(1-a)^2+\tfrac12a^2\ &\Longrightarrow\ \hat J'(a) = 2a-1,\ \text{minimum en } a = \blank{g}. &&\text{(iv)}
+\end{aligned}$$
+<p>(iv) confirme que $g_{\text{rec}}+g_{\text{KL}} = \hat J'(0)$ : la reparamétrisation donne le vrai gradient.</p>`,
+    blanks: {
+      a: { kind: 'num', ans: 0, tol: 0 }, b: { kind: 'num', ans: -1, tol: 0 }, c: { kind: 'num', ans: -1, tol: 0 }, d: { kind: 'num', ans: 0, tol: 0 },
+      e: { kind: 'num', ans: 0.1 }, f: { kind: 'num', ans: -0.1 }, g: { kind: 'num', ans: 0.5, tex: R`\tfrac12` },
+    } }, H),
+
+  Object.assign({ id: 'h7c', ch: 7, title: 'Échantillons traités comme des constantes : l\'encodeur n\'apprend pas', src: 'HW7 P2.(2)',
+    text: R`<p class="hyp"><b>Données.</b> Même modèle : $x_1 = -1$, $x_2 = 1$, $q_a(z\mid x) = \mathcal N(ax,1)$, $\epsilon_i = 0$, $g_{\text{rec}} = \tfrac12\sum_i(z_i-x_i)\frac{\partial z_i}{\partial a}$, $g_{\text{KL}} = a$, $a_{\text{new}} = a-0{,}1(g_{\text{rec}}+g_{\text{KL}})$. Mais on pose $\partial z_i/\partial a = 0$ dans la rétropropagation.</p>
+<p><b>Calcul.</b></p>
+$$\begin{aligned}
+a = 0:\qquad g_{\text{rec}} &= \blank{a},\qquad g_{\text{KL}} = \blank{b},\qquad a_{\text{new}} = \blank{c} &&\text{(i)}\\
+a = 0{,}5:\qquad a_{\text{new}} &= \blank{d} &&\text{(ii)}\\
+\text{après } k \text{ pas depuis } a_0:\qquad a_k &= \blank{e}\cdot a_0 &&\text{(iii)}
+\end{aligned}$$
+<p>Le terme KL ne fait que ramener $a$ vers [[f]], c'est-à-dire $q_a$ vers l'a priori : il ne contient aucune information sur les données.</p>`,
+    blanks: {
+      a: { kind: 'num', ans: 0, tol: 0 }, b: { kind: 'num', ans: 0, tol: 0 }, c: { kind: 'num', ans: 0, tol: 0 },
+      d: { kind: 'num', ans: 0.45 },
+      e: { kind: 'expr', ans: ['0.9^k', '0,9^k', '(0.9)^k', '(9/10)^k', '0.9^{k}'], tex: '0{,}9^k' },
+      f: { kind: 'word', ans: ['0', 'zéro', 'zero'], tex: '0' },
     } }, H),
   );
 })(window.ML);

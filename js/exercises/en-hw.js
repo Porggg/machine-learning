@@ -333,5 +333,39 @@ I_2 = 1\ \Longrightarrow\ \hat y_2 &= 1,\qquad \ell(y_2,\hat y_2) = \blank{f}. &
 \end{aligned}$$
 <p>The realized loss (v) is not equal to $\E[\ell_2]$: it is a [[g]] variable, equal to 4 with probability $p_2(1)$ and 1 with probability $p_2(2)$; only its mean equals $\E[\ell_2]$.</p>`,
     words: { g: { ans: ['random', 'aléatoire', 'aleatoire'], tex: 'random' } } },
+  h7a: { title: 'Reparameterization: samples and the gradient path',
+    text: R`<p class="hyp"><b>Data.</b> An encoder outputs $q(z\mid x) = \mathcal N(\mu,\sigma^2)$ with $\mu = 1$ and $\sigma = 2$ (standard deviation). Sampling uses $\epsilon\sim\mathcal N(0,1)$, $z = \mu+\sigma\epsilon$.</p>
+<p><b>Computation.</b></p>
+$$\begin{aligned}
+\epsilon = -1,\ 0,\ 1\ &\Longrightarrow\ z = \blank{a},\ \ \blank{b},\ \ \blank{c} &&\text{(i)}\\
+\frac{\partial z}{\partial\mu} &= \blank{d},\qquad\frac{\partial z}{\partial\sigma} = \blank{e}\quad(\epsilon\text{ fixed}) &&\text{(ii)}\\
+\text{if } z \text{ is treated as a constant:}\quad\frac{\partial z}{\partial\mu} &= \blank{f}\ \text{ in backpropagation.} &&\text{(iii)}
+\end{aligned}$$
+<p>In case (iii), no gradient from the reconstruction reaches the encoder parameters. Reparameterization moves the randomness into $\epsilon$, whose distribution does not depend on the [[g]].</p>`,
+    words: { g: { ans: ['parameters', 'encoder parameters', 'paramètres', 'parametres'], tex: 'parameters (of the encoder)' } } },
+
+  h7b: { title: 'One gradient step on the encoder, with reparameterization',
+    text: R`<p class="hyp"><b>Data.</b> $x_1 = -1$, $x_2 = 1$; $p(z) = \mathcal N(0,1)$, fixed decoder $p(x\mid z) = \mathcal N(z,1)$, encoder $q_a(z\mid x) = \mathcal N(ax,1)$ with single parameter $a$. Noise $\epsilon_1 = \epsilon_2 = 0$, $z_i = ax_i+\epsilon_i$, and
+$$\hat J(a) = \tfrac12\textstyle\sum_i\big[\tfrac12(x_i-z_i)^2+\tfrac12(ax_i)^2\big],\quad g_{\text{rec}} = \tfrac12\sum_i(z_i-x_i)\frac{\partial z_i}{\partial a},\quad g_{\text{KL}} = a,\quad a_{\text{new}} = a-0.1(g_{\text{rec}}+g_{\text{KL}}).$$
+Start at $a = 0$.</p>
+<p><b>Computation.</b></p>
+$$\begin{aligned}
+z_1 = z_2 &= \blank{a},\qquad\frac{\partial z_1}{\partial a} = \blank{b},\quad\frac{\partial z_2}{\partial a} = 1 &&\text{(i)}\\
+g_{\text{rec}} &= \blank{c},\qquad g_{\text{KL}} = \blank{d} &&\text{(ii)}\\
+a_{\text{new}} &= \blank{e},\qquad a_{\text{new}}x_1 = \blank{f} &&\text{(iii)}\\
+\hat J(a) = \tfrac12(1-a)^2+\tfrac12a^2\ &\Longrightarrow\ \hat J'(a) = 2a-1,\ \text{minimum at } a = \blank{g}. &&\text{(iv)}
+\end{aligned}$$
+<p>(iv) confirms that $g_{\text{rec}}+g_{\text{KL}} = \hat J'(0)$: reparameterization gives the true gradient.</p>` },
+
+  h7c: { title: 'Samples treated as constants: the encoder does not learn',
+    text: R`<p class="hyp"><b>Data.</b> Same model: $x_1 = -1$, $x_2 = 1$, $q_a(z\mid x) = \mathcal N(ax,1)$, $\epsilon_i = 0$, $g_{\text{rec}} = \tfrac12\sum_i(z_i-x_i)\frac{\partial z_i}{\partial a}$, $g_{\text{KL}} = a$, $a_{\text{new}} = a-0.1(g_{\text{rec}}+g_{\text{KL}})$. But $\partial z_i/\partial a = 0$ is used during backpropagation.</p>
+<p><b>Computation.</b></p>
+$$\begin{aligned}
+a = 0:\qquad g_{\text{rec}} &= \blank{a},\qquad g_{\text{KL}} = \blank{b},\qquad a_{\text{new}} = \blank{c} &&\text{(i)}\\
+a = 0.5:\qquad a_{\text{new}} &= \blank{d} &&\text{(ii)}\\
+\text{after } k \text{ steps from } a_0:\qquad a_k &= \blank{e}\cdot a_0 &&\text{(iii)}
+\end{aligned}$$
+<p>The KL term only pulls $a$ back toward [[f]], i.e. $q_a$ toward the prior: it carries no information about the data.</p>`,
+    words: { f: { ans: ['0', 'zero'], tex: '0' } } },
   });
 })(window.ML);
