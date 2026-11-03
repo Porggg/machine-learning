@@ -20,6 +20,7 @@
     <a href="online-learning.html">6 · Apprentissage en ligne</a>
     <a href="vae.html">7 · VAE</a>
     <a href="transformers.html">8 · Transformers</a>
+    <a href="kmeans.html">9 · k-means &amp; EM</a>
     <a href="exercises.html">Entraînement</a>
     <a class="local-only" href="homework.html">Devoirs</a>
   </nav>
@@ -101,12 +102,20 @@
       <p>Prédiction du token suivant et règle de la chaîne, modèle de Markov, les cinq versions de l'attention (preuves : scores symétriques, $\mathrm{Var}(q^\top k) = D_k$, saturation du softmax), multi-têtes, couche de transformer, équivariance par permutation (preuve), encodage positionnel, attention masquée, NTP = maximum de vraisemblance, mini-transformer entraîné en direct. <b>8 scènes.</b></p>
     </div>
   </a>
+  <a class="card" href="kmeans.html">
+    <canvas data-thumb="km"></canvas>
+    <div class="card-body">
+      <div class="meta">Semaine du 3/11 · PRML ch. 9 · Examen 2 le 12/11</div>
+      <h3>9 · k-means, GMM et EM</h3>
+      <p>Objectif du k-means, algorithme de Lloyd (monotonie, arrêt en temps fini), k-means++, quantification de couleurs, soft k-means (Lagrange), mélanges de gaussiennes et distance de Mahalanobis, borne de Jensen, étapes E et M démontrées, effondrement des covariances, k-means comme limite $\sigma^2\to0$. <b>10 scènes.</b></p>
+    </div>
+  </a>
   <a class="card" href="exercises.html">
     <canvas data-thumb="quiz"></canvas>
     <div class="card-body">
       <div class="meta">Définitions · dérivations · calculs</div>
       <h3>Entraînement (textes à trous)</h3>
-      <p>172 exercices en anglais (ou en français), présentés comme un sujet d'examen (énoncé, preuve à trous, cases numérotées) : démonstrations du cours, définitions, questions sur les devoirs HW1–HW7, calculs à valeurs aléatoires. Réponses libres en LaTeX ou texte, corrigés détaillés, progression enregistrée.</p>
+      <p>190 exercices en anglais (ou en français), présentés comme un sujet d'examen (énoncé, preuve à trous, cases numérotées) : démonstrations du cours, définitions, questions sur les devoirs HW1–HW7, calculs à valeurs aléatoires. Réponses libres en LaTeX ou texte, corrigés détaillés, progression enregistrée.</p>
     </div>
   </a>
   <a class="card local-only" href="homework.html">
@@ -121,6 +130,7 @@
 
 <section class="schedule">
   <h2 style="margin-top:40px">Planning du cours</h2>
+  <p style="font-size:14px"><b>Mise à jour du 3/11</b> (message du professeur) : l'ordre a changé — VAE et Transformers ont été traités avant le clustering ; le <a href="kmeans.html">k-means</a> est traité la semaine du 3/11 et EM est donné en cours vidéo. La PCA n'est pas au programme. <b>Examen 2 le jeudi 12/11</b>, pendant l'heure du cours : k-means, EM, VAE, Transformers.</p>
   <p class="c-dim" style="font-size:14px">D'après le <a href="https://docs.google.com/spreadsheets/d/e/2PACX-1vRd2A8bm0avoKXjcekoCtg7jxSTh-tk06fMr0_GcsDDKYLHdYKkp8S_YkyZYuKYgJbq_KQx-oe-I5KR/pubhtml" target="_blank">planning officiel</a> (copié le 25/09/2026). Les lectures renvoient à la bonne page des PDF du dossier <code>Textbooks/</code>.</p>
   <table><thead><tr><th>#</th><th>Date</th><th>Sujet</th><th>Devoir</th><th>Lecture</th><th></th></tr></thead><tbody id="sched"></tbody></table>
 </section>
@@ -150,13 +160,13 @@
     ['10', '10/13', 'Classification — NNs', 'HW5 : NNs for classification', [['PRML 5.1–5.3', PRML + 247], ['DL ch. 6, 8', DL + 189]], 'done', 'neural-networks.html'],
     ['11', '10/15', 'Online Learning — EW', 'HW6', [['FML ch. 8.2', null], ['MLAPP 8.5.1', MLAPP + 293]], 'todo', 'online-learning.html'],
     ['12', '10/20', 'Exam 1', '', [], 'exam'],
-    ['13/14', '10/22', 'Clustering — k-means and EM', 'HW7 / HW8', [['PRML 9.1–9.2', PRML + 444]], 'todo'],
-    ['15', '10/27', 'Dimension Reduction — PCA', 'HW9', [['PRML 12.1', PRML + 581]], 'todo'],
+    ['13/14', '10/22', 'Clustering — k-means and EM (traité la semaine du 3/11 ; EM en vidéo)', 'HW7 / HW8', [['PRML 9.1–9.4', PRML + 444]], 'todo', 'kmeans.html'],
+    ['15', '10/27', '<s>Dimension Reduction — PCA</s> (retiré du programme)', 'HW9', [['PRML 12.1', PRML + 581]], 'todo'],
     ['16', '10/29', 'Density Estimation — VAE I', '', [['PRML 10.1', PRML + 482], ['DL ch. 19', DL + 574]], 'todo', 'vae.html'],
     ['17', '11/3', 'Density Estimation — VAE II', 'HW10', [['DL ch. 19', DL + 574]], 'todo', 'vae.html'],
     ['18', '11/5', 'Density Estimation — Transformers I', '', [['DL ch. 12', DL + 373]], 'todo', 'transformers.html'],
     ['19', '11/10', 'Density Estimation — Transformers II', 'HW11 : transformer for generation', [['DL §12.3', DL + 398]], 'todo', 'transformers.html'],
-    ['20', '11/12', 'Exam 2', '', [], 'exam'],
+    ['20', '11/12', 'Exam 2 — k-means, EM, VAE, Transformers (pas de PCA)', '', [], 'exam'],
     ['21', '11/17', 'RL — MDP I', '', [['RL ch. 3', RL]], 'todo'],
     ['22', '11/19', 'RL — MDP II', 'HW12', [], 'todo'],
     ['23', '11/24', 'RL — PI/VI', 'HW13 : value iteration', [['RL ch. 4', RL]], 'todo'],
@@ -236,6 +246,16 @@
         p.rect(x, y - 0.44, x + 0.58, y, { color: '#000', width: 1, fill: v < 0 ? '#6b2a30' : M.ramp(0.08 + 0.9 * Math.sqrt(v)), fillAlpha: 1 });
       }
       p.tex('tf', -3.3, 1.75, '\\mathrm{Softmax}\\big[QK^\\top/\\sqrt{D_k}\\big]V', { color: '#ddd', anchor: 'left', size: 15 });
+    },
+    km: (p, t) => {
+      // trois groupes ; les centres glissent de leur départ à la solution du k-means, les cellules de Voronoï suivent
+      const R = M.rng(11), ctr = [[-1.9, 0.9], [1.7, 1.0], [0.1, -1.3]], X = [];
+      ctr.forEach(c => { for (let i = 0; i < 14; i++) X.push([c[0] + 0.45 * R.n(), c[1] + 0.4 * R.n()]); });
+      const s = 0.5 - 0.5 * Math.cos(t * 0.7), m0 = [[-3, -1.8], [-2.4, 1.8], [-0.4, 1.9]], mu = ctr.map((c, k) => [m0[k][0] + s * (c[0] - m0[k][0]), m0[k][1] + s * (c[1] - m0[k][1])]);
+      const near = (x, y) => { let b = 0, bd = Infinity; mu.forEach((m, k) => { const d = (x - m[0]) ** 2 + (y - m[1]) ** 2; if (d < bd) { bd = d; b = k; } }); return b; }, col = [C.blue, C.red, C.green];
+      p.heatmapRGB((x, y) => M.hexToRgb(col[near(x, y)]).map(v => v * 0.2), { res: 6 });
+      X.forEach(([x, y]) => p.point(x, y, { color: col[near(x, y)], r: 3 }));
+      mu.forEach((m, k) => p.point(m[0], m[1], { shape: 'cross', color: '#fff', r: 7, width: 3 }));
     },
     hw: (p, t) => {
       const w = [0.1, 11.8, -33.5, 21.9]; // cubique proche de sin 2πx sur [0,1], remis à l'échelle

@@ -1,0 +1,654 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>k-means et EM — Cours interactif ML</title>
+<link rel="stylesheet" href="lib/katex/katex.min.css">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <a class="brand" href="index.html"><span class="pi">∇</span>ML · POSTECH</a>
+  <nav>
+    <a href="index.html">Accueil</a>
+    <a href="linear-regression.html">1 · Régression linéaire</a>
+    <a href="logistic-regression.html">2 · Régression logistique</a>
+    <a href="svm.html">3 · SVM</a>
+    <a href="model-selection.html">4 · Sélection de modèle</a>
+    <a href="neural-networks.html">5 · Réseaux de neurones</a>
+    <a href="online-learning.html">6 · Apprentissage en ligne</a>
+    <a href="vae.html">7 · VAE</a>
+    <a href="transformers.html">8 · Transformers</a>
+    <a href="kmeans.html" class="active">9 · k-means &amp; EM</a>
+    <a href="exercises.html">Entraînement</a>
+    <a class="local-only" href="homework.html">Devoirs</a>
+  </nav>
+</header>
+
+<div class="layout">
+<aside class="sidebar">
+  <h4>Sommaire</h4>
+  <div class="toc"></div>
+  <div class="legend">
+    <h4>Sources</h4>
+    <div><span class="src slides">Slides</span> au programme (slides du cours)</div>
+    <div><span class="src book">PRML / DL</span> manuel de référence (lien → page)</div>
+    <div><span class="src extra">Hors slides</span> complément, pas dans les slides</div>
+  </div>
+</aside>
+
+<main class="content"><div class="content-inner">
+
+<h1>Clustering : k-means, mélanges de gaussiennes et EM<span class="sub">Clustering via K-means and more — k-means · soft k-means · GMM · algorithme EM · semaine du 3/11 (EM : aussi en cours vidéo)</span></h1>
+<div class="sources">
+  <a class="src slides" href="../Slides/10-kmeans.pdf" target="_blank">Slides 10-kmeans (40 p.)</a>
+  <a class="src book" href="../Textbooks/Pattern%20Recognition%20and%20Machine%20Learning.pdf#page=443" target="_blank">PRML ch. 9 Mixture Models and EM p.423</a>
+  <a class="src book" href="../Textbooks/Pattern%20Recognition%20and%20Machine%20Learning.pdf#page=444" target="_blank">PRML §9.1 K-means</a>
+  <a class="src book" href="../Textbooks/Pattern%20Recognition%20and%20Machine%20Learning.pdf#page=450" target="_blank">PRML §9.2 Mixtures of Gaussians</a>
+  <a class="src book" href="../Textbooks/Pattern%20Recognition%20and%20Machine%20Learning.pdf#page=459" target="_blank">PRML §9.3 An Alternative View of EM</a>
+  <a class="src book" href="../Textbooks/Pattern%20Recognition%20and%20Machine%20Learning.pdf#page=470" target="_blank">PRML §9.4 EM in General</a>
+</div>
+
+<div class="box warn"><div class="box-title">Examen 2 : jeudi 12/11, pendant l'heure du cours</div>
+Programme annoncé par le professeur : <b>k-means</b> (ce chapitre, traité cette semaine), <b>EM</b> (donné en cours vidéo ; la version des slides est au §6 ci-dessous), <b>VAE</b> (<a href="vae.html">chapitre 7</a>) et <b>Transformers</b> (<a href="transformers.html">chapitre 8</a>). La <b>PCA n'est pas au programme</b> (elle ne sera pas traitée en cours).
+</div>
+
+<p>Jusqu'ici, presque tout était <b>supervisé</b> : chaque donnée $x_i$ venait avec sa réponse $y_i$. Le <b>clustering</b> n'a que les $x_i$ : il faut découper les données en $K$ groupes de points « semblables ». Le chapitre suit une chaîne de trois algorithmes, chacun corrigeant un défaut du précédent : le <b>k-means</b> (chaque point va au centre le plus proche), le <b>soft k-means</b> (chaque point se partage entre les centres), et le <b>mélange de gaussiennes</b> appris par l'algorithme <b>EM</b> (chaque groupe a sa forme, sa taille et son poids). Le fil commun : <b>alterner</b> entre deviner les appartenances (cachées) et ajuster les paramètres, deux sous-problèmes faciles quand l'autre est fixé. Au début de chaque section, un encadré <span class="c-teal"><b>Où on en est</b></span> fait le point.</p>
+
+<h2 id="roadmap">Feuille de route</h2>
+<div class="sources"><a class="src slides" href="../Slides/10-kmeans.pdf#page=2" target="_blank">Slides p.2, 6 (plan)</a></div>
+<div class="flow">
+<a class="st" href="#clustering"><b>① Le problème · §1</b>grouper sans étiquettes<i>$K$ donné, une distance donnée</i></a><div class="ar">→</div>
+<a class="st" href="#objective"><b>② L'objectif · §2</b>$J(r,\mu) = \sum_{i,k}r_{ik}\|x_i-\mu_k\|^2$<i>facile en $r$, facile en $\mu$, pas convexe</i></a><div class="ar">→</div>
+<a class="st" href="#lloyd"><b>③ k-means · §3</b>affectation ↔ mise à jour<i>$J$ décroît, arrêt en temps fini</i></a><div class="ar">→</div>
+<a class="st" href="#soft"><b>④ Soft k-means · §4</b>$r_{ik}\propto e^{-\beta\|x_i-\mu_k\|^2}$<i>affectations souples</i></a><div class="ar">→</div>
+<a class="st" href="#gmm"><b>⑤ GMM · §5</b>$\sum_k\pi_k\N(x\mid\mu_k,\Sigma_k)$<i>une forme par groupe</i></a><div class="ar">→</div>
+<a class="st" href="#em"><b>⑥ EM · §6</b>$\mathcal L(\theta)\ge F(r,\theta)$<i>étapes E et M en forme close</i></a><div class="ar">→</div>
+<a class="st goal" href="#limit"><b>⑦ La boucle se ferme · §7</b>$\Sigma_k = \sigma^2I$, $\sigma^2\to0$<i>EM redonne le k-means</i></a>
+</div>
+
+<h3 id="roadmap-why">Le raisonnement, maillon par maillon</h3>
+<ol class="plan">
+<li><span class="n">①</span><b>Grouper, c'est choisir une partition.</b> On cherche $K$ groupes de points proches au sens d'une distance. <span class="why">Sans étiquettes, il n'y a pas d'erreur de test à minimiser : c'est l'objectif choisi qui définit ce qu'est un « bon » groupement.</span></li>
+<li><span class="n">②</span><b>Un objectif : la somme des distances au carré à son centre.</b> $J$ dépend des affectations $r$ (discrètes) et des centres $\mu$. <span class="why">À $\mu$ fixé, le meilleur $r$ envoie chaque point au centre le plus proche ; à $r$ fixé, le meilleur $\mu_k$ est la moyenne du groupe. Mais minimiser les deux à la fois n'est pas convexe.</span></li>
+<li><span class="n">③</span><b>Alterner les deux minimisations faciles.</b> C'est l'algorithme du k-means (Lloyd). <span class="why">Chaque demi-étape fait baisser $J$, il n'y a qu'un nombre fini de partitions : l'algorithme s'arrête. Le résultat dépend de l'initialisation (d'où k-means++).</span></li>
+<li><span class="n">④</span><b>Affecter de façon souple.</b> Avec des affectations dures, un point ne tire que son centre, et l'algorithme peut rester bloqué. <span class="why">Ajouter un terme d'entropie à $J$ donne des poids $r_{ik}\propto e^{-\beta\|x_i-\mu_k\|^2}$ (preuve par Lagrange) : chaque point tire tous les centres.</span></li>
+<li><span class="n">⑤</span><b>Changer de distance : un modèle probabiliste.</b> La même distance euclidienne pour tous les groupes ignore leur forme. <span class="why">Remplacer le score $e^{-\beta\|x-\mu_k\|^2}$ par $\pi_k\N(x\mid\mu_k,\Sigma_k)$ donne à chaque groupe une covariance et un poids : c'est un mélange de gaussiennes (GMM), qu'on apprend par maximum de vraisemblance.</span></li>
+<li><span class="n">⑥</span><b>Maximiser une borne inférieure.</b> La log-vraisemblance $\log\sum_k(\cdot)$ est difficile ; par Jensen, elle majore une fonction $F(r,\theta)$ facile dans chaque bloc. <span class="why">Étape E : $r$ = loi a posteriori (borne serrée) ; étape M : moyennes, covariances et poids pondérés, en forme close. La vraisemblance ne baisse jamais.</span></li>
+<li><span class="n">⑦</span><b>Le k-means est un cas particulier.</b> Avec $\pi_k = 1/K$ et $\Sigma_k = \sigma^2I$, EM est exactement le soft k-means avec $\beta = 1/(2\sigma^2)$. <span class="why">Quand $\sigma^2\to0$, les responsabilités deviennent 0 ou 1 : on retrouve le k-means. Les trois algorithmes sont la même idée.</span></li>
+</ol>
+
+<div class="box intu"><div class="box-title">À la fin du chapitre, tu dois savoir…</div>
+<ul>
+<li>écrire l'objectif du k-means avec ses contraintes, et <b>démontrer</b> que l'affectation au centre le plus proche et la moyenne du groupe sont les minimiseurs par blocs ;</li>
+<li>écrire l'algorithme de Lloyd, <b>démontrer</b> la décroissance de $J$ et l'arrêt en temps fini, donner sa complexité, expliquer la sensibilité à l'initialisation et k-means++ ;</li>
+<li>écrire l'objectif du soft k-means et <b>dériver</b> $r_{ik} = e^{-\beta\|x_i-\mu_k\|^2}/\sum_\ell e^{-\beta\|x_i-\mu_\ell\|^2}$ par un multiplicateur de Lagrange ;</li>
+<li>définir un modèle de mélange, son tirage en deux temps, un GMM et la distance de Mahalanobis ;</li>
+<li><b>démontrer</b> $F(r,\theta)\le\mathcal L(\theta)$ (Jensen), puis les étapes E et M pour un GMM (moyennes, covariances, poids) et la croissance de $\mathcal L$ ;</li>
+<li><b>démontrer</b> que le k-means et le soft k-means sont des cas particuliers d'EM (slides 28–29).</li>
+</ul></div>
+
+<h2 id="notations">Notations du chapitre</h2>
+<p>Les slides passent de l'indice $i$ (k-means) à l'indice $n$ (GMM, comme PRML) pour les données ; le sens est le même. Plusieurs lettres ont déjà servi ailleurs avec un autre sens : voir l'encadré qui suit le tableau.</p>
+<div class="notation-wrap"><table class="notation">
+<thead><tr><th>Symbole</th><th>Se lit / signifie</th><th>Nature</th><th>Où</th></tr></thead>
+<tbody>
+<tr class="grp"><td colspan="4">Données et groupes</td></tr>
+<tr><td>$x_i$ ou $x_n\in\R^D$, $i,n\in[N]$</td><td>les $N$ données, sans étiquette</td><td>vecteurs</td><td class="where">partout</td></tr>
+<tr><td>$K$, $k,\ell\in[K]$</td><td>nombre de groupes (donné à l'avance) ; indices de groupe</td><td>entier</td><td class="where">partout</td></tr>
+<tr><td>$\mu_k\in\R^D$</td><td>centre du groupe $k$ (k-means), ou moyenne de la composante $k$ (GMM)</td><td>vecteur</td><td class="where">partout</td></tr>
+<tr><td>$r_{ik}$ ou $r_{nk}$</td><td>affectation de $x_i$ au groupe $k$ : dans $\{0,1\}$ (k-means), dans $[0,1]$ (soft k-means, GMM : « responsabilité »)</td><td>réel</td><td class="where">partout</td></tr>
+<tr><td>$C_k$, $|C_k|$</td><td>l'ensemble des points affectés au groupe $k$ ; leur nombre</td><td>ensemble ; entier</td><td class="where">§3, §7</td></tr>
+<tr><td>$J(r,\mu)$</td><td>objectif du k-means : somme (pas moyenne) des distances au carré</td><td>réel $\ge0$</td><td class="where">§2–3</td></tr>
+<tr class="grp"><td colspan="4">Soft k-means (§4)</td></tr>
+<tr><td>$\beta>0$</td><td>raideur (« inverse température ») des affectations souples</td><td>réel</td><td class="where">§4, §7</td></tr>
+<tr><td>$H(r_i) = -\sum_kr_{ik}\log r_{ik}$</td><td>entropie de la ligne d'affectations de $x_i$ (convention $0\log0 = 0$)</td><td>réel $\ge0$</td><td class="where">§4, §6</td></tr>
+<tr><td>$J_{\text{soft}}$, $\lambda_i$</td><td>objectif du soft k-means ; multiplicateur de Lagrange de $\sum_kr_{ik} = 1$</td><td>réels</td><td class="where">§4</td></tr>
+<tr class="grp"><td colspan="4">Mélanges de gaussiennes (§5–7)</td></tr>
+<tr><td>$z$, $z_n\in[K]$</td><td>variable latente : la composante qui a produit $x_n$ (non observée)</td><td>v.a. discrète</td><td class="where">§5 →</td></tr>
+<tr><td>$\pi_k = p(z = k)$</td><td>poids de mélange (proportion du groupe $k$), $\pi_k\ge0$, $\sum_k\pi_k = 1$</td><td>réel</td><td class="where">§5 →</td></tr>
+<tr><td>$\Sigma_k\succ0$, $\Lambda_k = \Sigma_k^{-1}$</td><td>covariance de la composante $k$ ; sa matrice de précision</td><td>matrices $D\times D$</td><td class="where">§5 →</td></tr>
+<tr><td>$\N(x\mid\mu,\Sigma)$</td><td>densité gaussienne de moyenne $\mu$, covariance $\Sigma$, évaluée en $x$</td><td>réel $>0$</td><td class="where">§5 →</td></tr>
+<tr><td>$d_k(x)$</td><td>distance de Mahalanobis $\sqrt{(x-\mu_k)^\top\Sigma_k^{-1}(x-\mu_k)}$</td><td>réel $\ge0$</td><td class="where">§5</td></tr>
+<tr><td>$\theta = \{\pi_k,\mu_k,\Sigma_k\}_k$</td><td>tous les paramètres du GMM</td><td>ensemble</td><td class="where">§5 →</td></tr>
+<tr><td>$\mathcal L(\theta) = \log p(\mathcal D\mid\theta)$</td><td>log-vraisemblance des données $\mathcal D = \{x_1,\dots,x_N\}$</td><td>réel</td><td class="where">§5 →</td></tr>
+<tr><td>$F(r,\theta)$</td><td>borne inférieure de $\mathcal L(\theta)$ paramétrée par des affectations souples</td><td>réel</td><td class="where">§6</td></tr>
+<tr><td>$Q(\theta;\theta^{\text{old}})$</td><td>log-vraisemblance complète espérée : $\sum_{n,k}r_{nk}\log p_\theta(x_n,z_n = k)$</td><td>réel</td><td class="where">§6</td></tr>
+<tr><td>$N_k = \sum_nr_{nk}$</td><td>effectif « souple » de la composante $k$</td><td>réel $\ge0$</td><td class="where">§6</td></tr>
+<tr><td>$S_k$</td><td>dispersion pondérée $\sum_nr_{nk}(x_n-\mu_k^{\text{new}})(x_n-\mu_k^{\text{new}})^\top$</td><td>matrice $D\times D$</td><td class="where">§6</td></tr>
+<tr><td>$\sigma^2$</td><td>variance commune du GMM restreint $\Sigma_k = \sigma^2I$</td><td>réel $>0$</td><td class="where">§7</td></tr>
+</tbody></table></div>
+
+<div class="box warn"><div class="box-title">Pièges de notation</div>
+<ol>
+<li><b>$K$ est un nombre de groupes</b>, pas la matrice des clés (chapitre 8) ni un nombre d'échantillons (chapitre 7).</li>
+<li><b>$\pi_k$ est un poids</b>, pas le nombre $\pi\approx3{,}14$, qui apparaît pourtant dans la même formule : $\log\N(x\mid\mu,\Sigma) = -\frac D2\log(2\pi)-\frac12\log|\Sigma|-\dots$</li>
+<li><b>$\Sigma_k$ est une covariance</b>, pas une somme. Dans $\sum_k\pi_k\N(x\mid\mu_k,\Sigma_k)$, les deux apparaissent.</li>
+<li><b>$\N$ est la densité gaussienne, $N$ le nombre de données, $N_k$ un effectif souple.</b> Trois objets, la même lettre.</li>
+<li><b>$r_{ik}$ change de nature</b> : 0 ou 1 au §2–3, un réel de $[0,1]$ ensuite. La contrainte $\sum_kr_{ik} = 1$ reste la même.</li>
+<li><b>$J$ est une somme</b>, pas une moyenne : dans l'exemple de la slide 11, $J = 21$ et $J = 81$ pour 20 points.</li>
+<li><b>$\mathcal L$ est une log-vraisemblance à maximiser</b>, pas une perte à minimiser. $J$ (k-means) se minimise, $\mathcal L$ et $F$ (EM) se maximisent.</li>
+<li><b>$z$ est discrète</b> ici (un numéro de composante), alors que le $z$ du VAE (chapitre 7) était un vecteur continu. Mais c'est la même idée : une variable latente.</li>
+<li><b>« Étape E / étape M »</b> : PRML appelle déjà ainsi les deux étapes du k-means (affectation et mise à jour). Le nom vient d'EM : <b>E</b>xpectation (calculer les responsabilités) et <b>M</b>aximization (ajuster $\theta$).</li>
+<li><b>$\beta$ n'est pas un paramètre de régularisation</b> : grand $\beta$ = affectations dures, petit $\beta$ = affectations floues. Et $\beta = 1/(2\sigma^2)$ au §7.</li>
+</ol></div>
+
+<div class="box intu"><div class="box-title">Mode d'emploi des scènes</div>
+<ul>
+<li>Les points à halo (centres, point $x_i$) se déplacent à la souris ; <b>◉ Affichage</b> (en haut à droite) masque ou affiche les éléments de chaque figure.</li>
+<li>Couleur d'un point : son groupe (affectation dure) ou, pour des affectations souples, le <b>mélange</b> des couleurs des groupes pondéré par ses $r_{ik}$ (un point violet est partagé entre le bleu et le rouge).</li>
+<li>Les algorithmes itératifs avancent <b>demi-étape par demi-étape</b> (« Pas +1 ») : on voit séparément l'effet de chaque minimisation.</li>
+</ul></div>
+
+<!-- ===================================================================== -->
+<h2 id="clustering"><span class="num">1</span>Le problème : grouper sans étiquettes</h2>
+<div class="sources"><a class="src slides" href="../Slides/10-kmeans.pdf#page=2" target="_blank">Slides p.2–5</a><a class="src book" href="../Textbooks/Pattern%20Recognition%20and%20Machine%20Learning.pdf#page=443" target="_blank">PRML ch. 9 (intro)</a></div>
+<div class="box road"><div class="box-title">Où on en est</div><div class="road-row"><span class="rk ok">Acquis</span><div>Régression et classification (chapitres 1–5) : des données étiquetées $(x_i,y_i)$. Chapitre 7 : estimer une densité avec une variable latente $z$.</div></div><div class="road-row"><span class="rk q">Il manque</span><div>Que faire quand on n'a que les $x_i$, et qu'on veut savoir quels points « vont ensemble » ?</div></div><div class="road-row"><span class="rk go">Cette partie</span><div>Le problème du clustering et un exemple : la segmentation d'image.</div></div></div>
+<div class="vids"><div class="vids-title">▶ Vidéos<span>en anglais · s'ouvrent sur YouTube</span></div><div class="vids-grid"><a class="vid" href="https://www.youtube.com/watch?v=4b5d3muPQmA" target="_blank" rel="noopener"><span class="vid-thumb">▶<img src="https://i.ytimg.com/vi/4b5d3muPQmA/mqdefault.jpg" loading="lazy" alt="" onerror="this.remove()"></span><span class="vid-body"><span class="vid-ch">StatQuest</span><span class="vid-t" style="display:block">StatQuest: K-means clustering</span><span class="vid-why" style="display:block">Le k-means en images : affectation, mise à jour, plusieurs lancers, choix de $K$.</span></span></a><a class="vid" href="https://www.youtube.com/watch?v=yR7k19YBqiw" target="_blank" rel="noopener"><span class="vid-thumb">▶<img src="https://i.ytimg.com/vi/yR7k19YBqiw/mqdefault.jpg" loading="lazy" alt="" onerror="this.remove()"></span><span class="vid-body"><span class="vid-ch">Computerphile</span><span class="vid-t" style="display:block">K-means &amp; Image Segmentation</span><span class="vid-why" style="display:block">L'exemple des slides 5 et 12 : grouper les pixels par couleur.</span></span></a></div></div>
+
+<div class="box def"><div class="box-title">Clustering (slide 3)</div>
+Une des tâches d'apprentissage <b>non supervisé</b> les plus connues : <b>partitionner</b> un ensemble de points non étiquetés en un nombre <b>fixé à l'avance</b> de groupes de points semblables, au sens d'une mesure de similarité ou de distance.
+<ul><li>On suppose ici le nombre de groupes $K$ connu ; d'autres méthodes n'en ont pas besoin (par exemple <i>mean shift</i>).</li></ul>
+</div>
+<div class="box def"><div class="box-title">Exemple : segmenter une image (slides 4–5)</div>
+<ul>
+<li><b>Par classification</b> (supervisé) : des humains étiquettent chaque région de milliers d'images, et on apprend un classifieur pixel par pixel. Cela demande un énorme travail humain.</li>
+<li><b>Par clustering</b> (non supervisé) : sans étiquettes, on groupe les pixels dont les <b>intensités</b> (ou couleurs) se ressemblent. L'histogramme des intensités montre des bosses ; chaque bosse devient un segment. On regroupe ainsi des régions perceptuellement semblables, ou semblables pour une autre métrique.</li>
+</ul>
+</div>
+<details class="objs" open><summary>Les objets en jeu</summary><dl>
+<dt>une partition</dt><dd><span class="ty">ce qu'on cherche</span>Chaque point reçoit un numéro de groupe dans $[K]$. Les numéros eux-mêmes ne veulent rien dire : échanger les noms de deux groupes donne le même groupement.</dd>
+<dt>la distance</dt><dd><span class="ty">choix de modélisation</span>Elle définit ce que « semblable » veut dire. Le k-means utilise la distance euclidienne ; le GMM (§5) une distance propre à chaque groupe.</dd>
+<dt>$K$</dt><dd><span class="ty">hyperparamètre</span>Fixé à l'avance. Il ne se choisit pas en minimisant l'objectif, qui baisse toujours quand $K$ augmente (§3).</dd>
+</dl></details>
+<div class="box q"><div class="box-title">Le clustering a-t-il une « bonne réponse » ?</div>
+<details class="proof"><summary>Réponse</summary><div class="proof-body"><p>Pas au sens de la classification : il n'y a pas d'étiquette cachée à retrouver, et le même nuage de points peut se grouper de plusieurs façons raisonnables (par couleur ou par position pour les pixels d'une image, par exemple). C'est l'<b>objectif</b> qu'on se donne (somme des distances au centre pour le k-means, vraisemblance pour le GMM) qui définit la meilleure partition. On juge ensuite le résultat à son utilité : compression, segmentation, initialisation d'un autre modèle.</p></div></details></div>
+
+<!-- ===================================================================== -->
+<h2 id="objective"><span class="num">2</span>L'objectif du k-means</h2>
+<div class="sources"><a class="src slides" href="../Slides/10-kmeans.pdf#page=7" target="_blank">Slide p.7</a><a class="src book" href="../Textbooks/Pattern%20Recognition%20and%20Machine%20Learning.pdf#page=444" target="_blank">PRML §9.1 éq. 9.1–9.4</a></div>
+<div class="box road"><div class="box-title">Où on en est</div><div class="road-row"><span class="rk ok">Acquis</span><div>Le problème : $K$ groupes, sans étiquettes (§1).</div></div><div class="road-row"><span class="rk q">Il manque</span><div>Un critère chiffré qui dise quelle partition est la meilleure.</div></div><div class="road-row"><span class="rk go">Cette partie</span><div>L'objectif $J(r,\mu)$ ; ses minimiseurs en $r$ et en $\mu$ (preuves) ; les frontières sont des médiatrices ; le problème n'est pas convexe.</div></div></div>
+
+<div class="box def"><div class="box-title">Objectif du k-means (slide 7)</div>
+Étant donnés $K\in\{1,\dots,N\}$ et des points $\{x_i\in\R^D\}_{i\in[N]}$, trouver des centres $\mu = \{\mu_k\}_{k=1}^K$ et des affectations $r$ qui résolvent
+$$\min_{\mu,r}\ \underbrace{\sum_{i\in[N]}\sum_{k\in[K]}r_{ik}\,\|x_i-\mu_k\|_2^2}_{J(r,\mu)}\qquad\text{s.c.}\quad r_{ik}\in\{0,1\}\ \ \forall i,k,\qquad\sum_{k\in[K]}r_{ik} = 1\ \ \forall i.$$
+Chaque ligne $r_i = (r_{i1},\dots,r_{iK})$ est un vecteur « one-hot » : $x_i$ appartient à exactement un groupe, et $J$ additionne les distances au carré de chaque point à <b>son</b> centre. La minimisation n'est pas convexe : on utilise un algorithme itératif.
+</div>
+<p>$J$ mélange une variable discrète ($r$) et une variable continue ($\mu$). L'idée qui fait tout marcher : chaque bloc, l'autre étant fixé, se minimise <b>exactement</b> et facilement.</p>
+<div class="box thm"><div class="box-title">Proposition — à $\mu$ fixé, le meilleur $r$ affecte chaque point au centre le plus proche</div>
+$$r_{ik}^\star = \begin{cases}1 & \text{si } k = \argmin_{\ell\in[K]}\|x_i-\mu_\ell\|_2^2\\0 & \text{sinon}\end{cases}\qquad\text{(égalités : une règle fixe, par exemple le plus petit indice).}$$
+</div>
+<details class="proof"><summary>Preuve</summary>
+<div class="proof-body">
+<div class="step"><b>① $J$ se sépare en $i$.</b> À $\mu$ fixé, $J = \sum_i J_i(r_i)$ avec $J_i(r_i) = \sum_kr_{ik}d_{ik}$ et $d_{ik} = \|x_i-\mu_k\|^2$. Les contraintes portent sur chaque ligne séparément : on minimise chaque $J_i$ indépendamment.</div>
+<div class="step"><b>② Une ligne.</b> Si $r_i$ vaut 1 en position $k$, $J_i = d_{ik}$. Le minimum sur les $K$ choix possibles est $\min_\ell d_{i\ell}$, atteint en $k = \argmin_\ell d_{i\ell}$.</div>
+<div class="qed">∎</div>
+</div></details>
+<div class="box thm"><div class="box-title">Proposition — à $r$ fixé, le meilleur $\mu_k$ est la moyenne de son groupe</div>
+$$\mu_k^\star = \frac{\sum_ir_{ik}x_i}{\sum_ir_{ik}} = \frac1{|C_k|}\sum_{i\in C_k}x_i\qquad(\text{si }|C_k| = \textstyle\sum_ir_{ik}>0),$$
+et plus précisément, pour tout $\mu_k$ : $\sum_{i\in C_k}\|x_i-\mu_k\|^2 = \sum_{i\in C_k}\|x_i-\mu_k^\star\|^2+|C_k|\,\|\mu_k^\star-\mu_k\|^2$.
+</div>
+<details class="proof"><summary>Preuve</summary>
+<div class="proof-body">
+<div class="step"><b>① $J$ se sépare en $k$.</b> À $r$ fixé, $J = \sum_kJ_k(\mu_k)$ avec $J_k(\mu_k) = \sum_ir_{ik}\|x_i-\mu_k\|^2$ : chaque centre se choisit indépendamment.</div>
+<div class="step"><b>② Gradient.</b> $\nabla_{\mu_k}J_k = -2\sum_ir_{ik}(x_i-\mu_k)$. Il s'annule si et seulement si $\big(\sum_ir_{ik}\big)\mu_k = \sum_ir_{ik}x_i$. $J_k$ est une fonction quadratique de hessienne $2|C_k|I\succ0$ : convexe, donc ce point critique est le minimum.</div>
+<div class="step"><b>③ L'identité (sans dérivée).</b> On écrit $x_i-\mu_k = (x_i-\mu_k^\star)+(\mu_k^\star-\mu_k)$ et on développe le carré : le terme croisé vaut $2(\mu_k^\star-\mu_k)^\top\sum_{i\in C_k}(x_i-\mu_k^\star) = 0$ par définition de la moyenne. Le second terme $|C_k|\|\mu_k^\star-\mu_k\|^2$ est la pénalité exacte pour s'écarter de la moyenne.</div>
+<div class="step"><b>④ Groupe vide.</b> Si $|C_k| = 0$, $J_k\equiv0$ ne dépend pas de $\mu_k$ : n'importe quelle valeur convient, et on garde l'ancien centre (slide 9).</div>
+<div class="qed">∎</div>
+</div></details>
+<div class="box thm"><div class="box-title">Proposition — la frontière entre deux groupes est la médiatrice de leurs centres <span class="hint">PRML fig. 9.1</span></div>
+$\|x-\mu_1\|^2\le\|x-\mu_2\|^2\iff(\mu_2-\mu_1)^\top x\le\tfrac12\big(\|\mu_2\|^2-\|\mu_1\|^2\big)$ : un demi-espace limité par l'hyperplan orthogonal à $\mu_2-\mu_1$ passant par $\frac{\mu_1+\mu_2}2$. Les groupes sont donc des <b>polyèdres convexes</b> (cellules de Voronoï).
+</div>
+<details class="proof"><summary>Preuve</summary>
+<div class="proof-body">
+<div class="step"><b>① Développer.</b> $\|x-\mu_k\|^2 = \|x\|^2-2\mu_k^\top x+\|\mu_k\|^2$. Le terme $\|x\|^2$ est commun et disparaît de l'inégalité : $-2\mu_1^\top x+\|\mu_1\|^2\le-2\mu_2^\top x+\|\mu_2\|^2$, ce qui se réarrange en l'inégalité annoncée. Elle est <b>linéaire</b> en $x$.</div>
+<div class="step"><b>② L'hyperplan.</b> Il est orthogonal à $\mu_2-\mu_1$ et contient le milieu : $(\mu_2-\mu_1)^\top\frac{\mu_1+\mu_2}2 = \frac12(\|\mu_2\|^2-\|\mu_1\|^2)$.</div>
+<div class="step"><b>③ Les cellules.</b> La cellule du groupe $k$ est l'intersection des $K-1$ demi-espaces « plus proche de $\mu_k$ que de $\mu_\ell$ » : une intersection de demi-espaces est un polyèdre convexe.</div>
+<div class="qed">∎</div>
+</div></details>
+<div data-scene="km-obj"></div>
+<div class="box thm"><div class="box-title">Proposition — le problème du k-means n'est pas convexe</div>
+Même en éliminant $r$ (on pose $r = r^\star(\mu)$), la fonction $\mu\mapsto\tilde J(\mu) = \sum_i\min_k\|x_i-\mu_k\|^2$ n'est pas convexe.
+</div>
+<details class="proof"><summary>Preuve — un contre-exemple</summary>
+<div class="proof-body">
+<div class="step"><b>① Données.</b> $D = 1$, deux points $x_1 = -1$, $x_2 = 1$, et $K = 2$.</div>
+<div class="step"><b>② Deux minimiseurs.</b> $\mu = (-1,1)$ donne $\tilde J = 0$, et $\mu' = (1,-1)$ (les mêmes centres, noms échangés) aussi.</div>
+<div class="step"><b>③ Leur milieu.</b> $\frac12(\mu+\mu') = (0,0)$ donne $\tilde J = 1+1 = 2>0 = \frac12\tilde J(\mu)+\frac12\tilde J(\mu')$ : l'inégalité de convexité est violée.</div>
+<div class="step"><b>④ En général.</b> Cette symétrie existe toujours : permuter les noms des groupes donne $K!$ minimiseurs distincts, et une fonction convexe a un ensemble de minimiseurs convexe. Côté $r$, l'ensemble $\{0,1\}$ n'est même pas convexe : c'est un problème combinatoire (NP-difficile en général).</div>
+<div class="qed">∎</div>
+</div></details>
+<details class="objs" open><summary>Les objets en jeu</summary><dl>
+<dt>$r$</dt><dd><span class="ty">$N\times K$, une case à 1 par ligne</span>La partition. $K^N$ valeurs possibles : impossible de toutes les essayer.</dd>
+<dt>$\mu_k$</dt><dd><span class="ty">« prototype »</span>Le représentant du groupe. Quand le groupe est fixé, c'est son centre de gravité.</dd>
+<dt>$J$</dt><dd><span class="ty">inertie intra-groupe</span>Somme des carrés des distances à son centre. Petit $J$ : groupes compacts.</dd>
+</dl></details>
+
+<!-- ===================================================================== -->
+<h2 id="lloyd"><span class="num">3</span>L'algorithme du k-means</h2>
+<div class="sources"><a class="src slides" href="../Slides/10-kmeans.pdf#page=8" target="_blank">Slides p.8–12</a><a class="src book" href="../Textbooks/Pattern%20Recognition%20and%20Machine%20Learning.pdf#page=444" target="_blank">PRML §9.1</a><a class="src book" href="../Textbooks/Pattern%20Recognition%20and%20Machine%20Learning.pdf#page=448" target="_blank">PRML §9.1.1 Image segmentation</a></div>
+<div class="box road"><div class="box-title">Où on en est</div><div class="road-row"><span class="rk ok">Acquis</span><div>$\min_rJ$ (centre le plus proche) et $\min_\mu J$ (moyennes) sont faciles ; $\min_{r,\mu}J$ ne l'est pas (§2).</div></div><div class="road-row"><span class="rk q">Il manque</span><div>Un algorithme, et des garanties : est-ce qu'il s'arrête ? Est-ce qu'il trouve le minimum ?</div></div><div class="road-row"><span class="rk go">Cette partie</span><div>L'algorithme de Lloyd ; monotonie et arrêt en temps fini (preuves) ; complexité ; initialisation et k-means++ ; quantification de couleurs.</div></div></div>
+<div class="vids"><div class="vids-title">▶ Vidéos<span>en anglais · s'ouvrent sur YouTube</span></div><div class="vids-grid"><a class="vid" href="https://www.youtube.com/watch?v=_aWzGGNrcic" target="_blank" rel="noopener"><span class="vid-thumb">▶<img src="https://i.ytimg.com/vi/_aWzGGNrcic/mqdefault.jpg" loading="lazy" alt="" onerror="this.remove()"></span><span class="vid-body"><span class="vid-ch">Victor Lavrenko</span><span class="vid-t" style="display:block">K-means clustering: how it works</span><span class="vid-why" style="display:block">L'algorithme pas à pas sur un petit exemple, puis ses propriétés.</span></span></a><a class="vid" href="https://www.youtube.com/watch?v=QXOkPvFM6NU" target="_blank" rel="noopener"><span class="vid-thumb">▶<img src="https://i.ytimg.com/vi/QXOkPvFM6NU/mqdefault.jpg" loading="lazy" alt="" onerror="this.remove()"></span><span class="vid-body"><span class="vid-ch">Luis Serrano</span><span class="vid-t" style="display:block">Clustering: K-means and Hierarchical</span><span class="vid-why" style="display:block">Intuition visuelle, méthode du coude pour choisir $K$, et une alternative hiérarchique.</span></span></a></div></div>
+
+<div class="box def"><div class="box-title">Algorithme du k-means (Lloyd, slides 8–9)</div>
+<ul>
+<li><b>Initialisation.</b> Choisir $K$ centres $\mu_1,\dots,\mu_K$ au hasard.</li>
+<li><b>Étape d'affectation</b> ($\mu$ fixé, on trouve $r$) : $r_{ik} = 1$ si $k\in\argmin_{\ell\in[K]}\|x_i-\mu_\ell\|_2^2$, 0 sinon. Les égalités sont tranchées par une règle fixe.</li>
+<li><b>Étape de mise à jour</b> ($r$ fixé, on trouve $\mu$) : $\mu_k = \sum_ir_{ik}x_i\big/\sum_ir_{ik}$. Si $\sum_ir_{ik} = 0$, on garde l'ancien centre.</li>
+<li><b>Arrêt</b> quand une affectation ne change plus rien ; sinon on recommence.</li>
+</ul>
+Ce sont les deux minimisations exactes du §2, alternées.
+</div>
+<div data-scene="km-lloyd"></div>
+<div class="box thm"><div class="box-title">Proposition — monotonie (slide 10)</div>
+Chaque étape d'affectation ou de mise à jour ne fait pas augmenter le même objectif $J$ :
+$$J\big(r^{(t)},\mu^{(t)}\big)\ \ge\ J\big(r^{(t+1)},\mu^{(t)}\big)\ \ge\ J\big(r^{(t+1)},\mu^{(t+1)}\big).$$
+</div>
+<details class="proof"><summary>Preuve</summary>
+<div class="proof-body">
+<div class="step"><b>① Affectation.</b> $r^{(t+1)} = \argmin_rJ(r,\mu^{(t)})$ (première proposition du §2). L'ancien $r^{(t)}$ est un candidat admissible, donc $J(r^{(t+1)},\mu^{(t)})\le J(r^{(t)},\mu^{(t)})$.</div>
+<div class="step"><b>② Mise à jour.</b> $\mu^{(t+1)} = \argmin_\mu J(r^{(t+1)},\mu)$ (deuxième proposition), et $\mu^{(t)}$ est un candidat : $J(r^{(t+1)},\mu^{(t+1)})\le J(r^{(t+1)},\mu^{(t)})$. Pour un groupe vide, le centre ne bouge pas et son terme est nul : l'inégalité reste vraie.</div>
+<div class="qed">∎</div>
+</div></details>
+<div class="box thm"><div class="box-title">Proposition — arrêt en un nombre fini d'itérations (slide 10)</div>
+Sans groupe vide, et avec une règle d'égalité fixe qui garde l'ancien groupe en cas d'égalité, les affectations cessent de changer après au plus $K^N$ itérations. À l'arrêt, aucune des deux étapes ne peut faire baisser $J$ ; le minimum <b>global</b> n'est pas garanti.
+</div>
+<details class="proof"><summary>Preuve</summary>
+<div class="proof-body">
+<div class="step"><b>① $J$ après une mise à jour ne dépend que de la partition.</b> Après la mise à jour, $\mu^{(t)}$ est la moyenne des groupes de $r^{(t)}$ : $\Phi_t := J(r^{(t)},\mu^{(t)}) = \phi(r^{(t)})$, où $\phi(r) = J(r,\text{moyennes de }r)$.</div>
+<div class="step"><b>② Décroissance stricte tant que ça bouge.</b> Si $r^{(t+1)}\ne r^{(t)}$, au moins un point a changé de groupe ; avec la règle d'égalité, il ne change que pour un centre <b>strictement</b> plus proche. Donc $J(r^{(t+1)},\mu^{(t)})\lt J(r^{(t)},\mu^{(t)})$, puis $\Phi_{t+1}\le J(r^{(t+1)},\mu^{(t)})\lt\Phi_t$.</div>
+<div class="step"><b>③ Pas de retour en arrière.</b> Une suite strictement décroissante ne repasse jamais par la même valeur, donc $\phi$ ne revoit jamais la même partition. Il y a au plus $K^N$ partitions : après au plus $K^N$ itérations, $r^{(t+1)} = r^{(t)}$, et alors $\mu$ ne bouge plus non plus.</div>
+<div class="step"><b>④ À l'arrêt.</b> $r$ est optimal pour $\mu$ et $\mu$ pour $r$ : c'est un minimum par blocs (aucune des deux étapes n'améliore). Rien n'empêche une autre partition d'avoir un $J$ plus petit ; la borne $K^N$ est très pessimiste (en pratique, quelques dizaines d'itérations).</div>
+<div class="qed">∎</div>
+</div></details>
+<div class="box thm"><div class="box-title">Proposition — complexité par itération (slide 10)</div>
+Affectation : $O(KND)$. Mise à jour des centres : $O(ND)$ (pour $K\le N$), en ajoutant chaque point une seule fois à la somme de son groupe.
+</div>
+<details class="proof"><summary>Preuve</summary>
+<div class="proof-body">
+<div class="step"><b>① Affectation.</b> Pour chacun des $N$ points, on calcule $K$ distances dans $\R^D$, chacune en $O(D)$, puis un minimum en $O(K)$ : $O(NKD)$.</div>
+<div class="step"><b>② Mise à jour.</b> On parcourt les points une fois, en ajoutant $x_i$ (coût $O(D)$) à l'accumulateur de son groupe et en incrémentant un compteur : $O(ND)$. Puis $K$ divisions de vecteurs : $O(KD)\le O(ND)$.</div>
+<div class="qed">∎</div>
+</div></details>
+<div class="box def"><div class="box-title">Sensibilité à l'initialisation (slides 10–11)</div>
+Des centres initiaux différents peuvent mener à des solutions différentes. Exemple de la slide 11 : les mêmes 20 points, $K = 2$ ; en partant de $\mu_1 = (-2,-1)$, $\mu_2 = (2,1)$ on converge vers $J = 21$, en partant de $\mu_1 = (-2,-1)$, $\mu_2 = (-2,1)$ vers $J = 81$. Les deux lancers ont convergé, vers des groupes différents.
+<ul><li><b>k-means++</b> : choisir des centres initiaux en favorisant les points <b>loin</b> des centres déjà choisis.</li></ul>
+</div>
+<div class="box def"><div class="box-title">k-means++ en détail <span class="hint">hors slides · Arthur &amp; Vassilvitskii, 2007</span></div>
+Premier centre : un point des données tiré uniformément. Ensuite, tant qu'il en manque : tirer $x_i$ avec une probabilité proportionnelle à $D(x_i)^2$, le carré de sa distance au centre déjà choisi le plus proche. Un point déjà choisi a $D = 0$ et ne peut pas l'être deux fois ; un point d'un groupe sans centre a une grande chance d'être pris. Garantie : $\E[J]\le8(\ln K+2)\,J^\star$, où $J^\star$ est le minimum global — <b>avant</b> même de lancer Lloyd, qui ne peut qu'améliorer.
+</div>
+<div data-scene="km-init"></div>
+<div class="box def"><div class="box-title">Une donnée = l'information RGB d'un pixel (slide 12)</div>
+Pour segmenter (ou compresser) une image, chaque pixel devient un point $x_i = (\text{rouge},\text{vert},\text{bleu})\in\R^3$ : $D = 3$ et $N$ = nombre de pixels. Le k-means groupe les couleurs ; remplacer chaque pixel par son centre donne une image à $K$ couleurs (« quantification vectorielle », PRML §9.1.1).
+</div>
+<div data-scene="km-img"></div>
+<details class="objs" open><summary>Les objets en jeu</summary><dl>
+<dt>une itération</dt><dd><span class="ty">deux minimisations exactes</span>Une descente par coordonnées (par blocs) : on optimise $r$, puis $\mu$, sans pas d'apprentissage.</dd>
+<dt>le point d'arrêt</dt><dd><span class="ty">minimum par blocs</span>Un point fixe de l'algorithme. Il dépend de l'initialisation ; on lance plusieurs fois et on garde le plus petit $J$.</dd>
+<dt>$J^\star(K)$</dt><dd><span class="ty">décroît avec $K$</span>Le minimum global de $J$ à $K$ fixé. Il atteint 0 pour $K = N$ (un centre par point).</dd>
+</dl></details>
+<div class="box q"><div class="box-title">Peut-on choisir $K$ en minimisant $J$ ? <span class="hint">hors slides</span></div>
+<details class="proof"><summary>Réponse</summary><div class="proof-body"><p>Non : $J^\star(K+1)\le J^\star(K)$ toujours. Preuve : partons d'une solution optimale à $K$ groupes et ajoutons un $(K+1)$-ième centre placé sur un point $x_j$ (de distance $d>0$ à son centre si possible) ; avec les mêmes affectations sauf $x_j$, $J$ baisse de $d^2$, et l'optimum à $K+1$ groupes fait au moins aussi bien. Le minimum est atteint en $K = N$, avec $J = 0$ : un groupe par point, ce qui ne sert à rien. On regarde plutôt la courbe $J^\star(K)$ et l'on prend le « coude » (où ajouter un groupe ne fait plus beaucoup baisser $J$), ou bien on utilise un critère qui pénalise $K$, ou la vraisemblance d'un GMM sur des données de validation (chapitre 4).</p></div></details></div>
+<div class="box q"><div class="box-title">Pourquoi le k-means coupe-t-il mal deux groupes allongés et parallèles ?</div>
+<details class="proof"><summary>Réponse</summary><div class="proof-body"><p>Les groupes du k-means sont des cellules de Voronoï, et $J$ préfère des groupes <b>ronds et compacts</b> : deux bandes horizontales, longues et proches, ont une plus grande inertie que les deux moitiés gauche et droite de l'ensemble. Dans la scène de Lloyd, choisis « 2 groupes très allongés et parallèles » : le k-means coupe verticalement. La même distance euclidienne est utilisée partout, quelle que soit la forme des groupes : c'est la motivation 2 du §5, et le GMM appris par EM (§6) retrouve les deux bandes (scène EM du §6, après un long plateau).</p></div></details></div>
+
+<!-- ===================================================================== -->
+<h2 id="soft"><span class="num">4</span>Soft k-means : des affectations souples</h2>
+<div class="sources"><a class="src slides" href="../Slides/10-kmeans.pdf#page=14" target="_blank">Slides p.14, 16–18</a><a class="src extra" href="https://www.inference.org.uk/itprnn/book.pdf" target="_blank">MacKay ch. 20 (soft K-means)</a></div>
+<div class="box road"><div class="box-title">Où on en est</div><div class="road-row"><span class="rk ok">Acquis</span><div>Le k-means converge, mais vers un minimum par blocs qui dépend de l'initialisation (§3).</div></div><div class="road-row"><span class="rk q">Il manque</span><div>Une affectation qui laisse un point influencer <b>plusieurs</b> centres, pour se débloquer.</div></div><div class="road-row"><span class="rk go">Cette partie</span><div>La motivation 1 (affectations dures) ; l'objectif avec entropie et sa solution par Lagrange (preuve) ; l'algorithme ; les limites $\beta\to\infty$ et $\beta\to0$.</div></div></div>
+
+<div class="box def"><div class="box-title">Motivation 1 : les affectations dures (slide 14)</div>
+Données $x = 0,\ 4,\ 10$ en dimension 1, $K = 2$, centres initiaux $\mu = (0,4)$. Le k-means converge vers $\mu = (0,7)$, avec 4 et 10 dans le même groupe.
+<ul><li>Chaque point ne met à jour que <b>son</b> centre.</li><li>Le point en 4 ne peut pas tirer le centre en 0 : l'algorithme reste bloqué en $(0,7)$.</li></ul>
+<b>Comment corriger ?</b> Par des affectations souples.
+</div>
+<div class="box thm"><div class="box-title">Proposition — $(0,7)$ est un point fixe du k-means, avec $J = 18$, alors que $\mu = (2,10)$ donne $J = 8$</div></div>
+<details class="proof"><summary>Preuve</summary>
+<div class="proof-body">
+<div class="step"><b>① Première itération.</b> Avec $\mu = (0,4)$ : 0 va au centre 1, et 4, 10 au centre 2 ($|10-4|\lt|10-0|$). Mise à jour : $\mu_1 = 0$, $\mu_2 = \frac{4+10}2 = 7$.</div>
+<div class="step"><b>② Point fixe.</b> Avec $\mu = (0,7)$ : $|4-0| = 4>|4-7| = 3$, donc 4 reste au groupe 2, et rien ne change. $J = 0+3^2+3^2 = 18$.</div>
+<div class="step"><b>③ Mieux.</b> La partition $\{0,4\},\{10\}$ donne $\mu = (2,10)$ et $J = 2^2+2^2+0 = 8\lt18$. L'algorithme ne la trouve pas depuis $(0,4)$ : il faudrait que le point en 4 « tire un peu » vers 0.</div>
+<div class="qed">∎</div>
+</div></details>
+<div class="box def"><div class="box-title">Objectif du soft k-means (slide 16)</div>
+Pour $\beta>0$ :
+$$\min_{\mu,r}\ J_{\text{soft}} = \sum_{i,k}r_{ik}\|x_i-\mu_k\|_2^2+\frac1\beta\sum_{i,k}r_{ik}\log r_{ik}\qquad\text{s.c.}\quad r_{ik}\ge0,\quad\sum_kr_{ik} = 1\ \ \forall i,$$
+avec la convention $0\log0 := 0$. Avec $H(r_i) = -\sum_kr_{ik}\log r_{ik}$, le second terme vaut $-\beta^{-1}\sum_iH(r_i)$ : il <b>favorise les affectations étalées</b>. Pour $\beta$ fini, il rend les affectations optimales strictement positives.
+</div>
+<div class="box thm"><div class="box-title">Proposition — à $\mu$ fixé, les affectations optimales sont un softmax (slide 16)</div>
+$$r_{ik} = \frac{e^{-\beta\|x_i-\mu_k\|_2^2}}{\sum_\ell e^{-\beta\|x_i-\mu_\ell\|_2^2}}.$$
+Plus $\beta$ est petit, plus les affectations sont souples ; plus il est grand, plus elles sont dures.
+</div>
+<details class="proof"><summary>Preuve — multiplicateur de Lagrange</summary>
+<div class="proof-body">
+<div class="step"><b>① Une ligne à la fois.</b> À $\mu$ fixé, $J_{\text{soft}}$ est une somme sur $i$ de termes qui ne dépendent que de $r_i$, avec des contraintes séparées : on traite chaque $i$ seul. On note $d_{ik} = \|x_i-\mu_k\|^2$ et on introduit un multiplicateur $\lambda_i$ pour $\sum_kr_{ik} = 1$ :
+$$A_i(r_i,\lambda_i) = \sum_kr_{ik}d_{ik}+\frac1\beta\sum_kr_{ik}\log r_{ik}+\lambda_i\Big(\sum_kr_{ik}-1\Big).$$</div>
+<div class="step"><b>② Annuler la dérivée.</b> $\dfrac{\partial A_i}{\partial r_{ik}} = d_{ik}+\frac1\beta(\log r_{ik}+1)+\lambda_i = 0\iff r_{ik} = e^{-1-\beta\lambda_i}\,e^{-\beta d_{ik}}$. C'est automatiquement $>0$ : la contrainte $r_{ik}\ge0$ est inactive (la dérivée de $r\log r$ vaut $-\infty$ en $0^+$, on ne s'arrête jamais au bord).</div>
+<div class="step"><b>③ Normaliser.</b> $\sum_kr_{ik} = 1\iff e^{-1-\beta\lambda_i}\sum_\ell e^{-\beta d_{i\ell}} = 1$, d'où $r_{ik} = e^{-\beta d_{ik}}/\sum_\ell e^{-\beta d_{i\ell}}$.</div>
+<div class="step"><b>④ C'est bien un minimum.</b> $r\mapsto r\log r$ est strictement convexe sur $[0,1]$ (dérivée seconde $1/r>0$) et $\sum_kr_{ik}d_{ik}$ est linéaire : $A_i$ est strictement convexe en $r_i$ sur un domaine convexe (le simplexe), donc l'unique point critique est le minimum global.</div>
+<div class="qed">∎</div>
+</div></details>
+<div class="box def"><div class="box-title">Algorithme du soft k-means (slide 17)</div>
+<ul>
+<li><b>Initialisation.</b> Choisir $\beta>0$ et une tolérance $\varepsilon>0$ ; initialiser $\mu_1,\dots,\mu_K$.</li>
+<li><b>Affectation</b> ($\mu$ fixé) : $r_{ik} = \exp(-\beta\|x_i-\mu_k\|^2)\big/\sum_{\ell\in[K]}\exp(-\beta\|x_i-\mu_\ell\|^2)$.</li>
+<li><b>Mise à jour</b> ($r$ fixé) : $\mu_k = \sum_{i\in[N]}r_{ik}x_i\big/\sum_{i\in[N]}r_{ik}$ : chaque centre est une <b>moyenne pondérée</b> de <b>tous</b> les points.</li>
+<li><b>Arrêt</b> quand le déplacement des centres est $\le\varepsilon$.</li>
+</ul>
+</div>
+<div class="box thm"><div class="box-title">Proposition — la mise à jour minimise $J_{\text{soft}}$ en $\mu$, donc $J_{\text{soft}}$ ne remonte jamais</div></div>
+<details class="proof"><summary>Preuve</summary>
+<div class="proof-body">
+<div class="step"><b>① En $\mu$.</b> Le terme d'entropie ne dépend pas de $\mu$. Il reste $\sum_kJ_k(\mu_k)$ avec $J_k = \sum_ir_{ik}\|x_i-\mu_k\|^2$, quadratique convexe de gradient $-2\sum_ir_{ik}(x_i-\mu_k)$ : il s'annule pour la moyenne pondérée.</div>
+<div class="step"><b>② Monotonie.</b> Comme au §3 : chaque étape minimise exactement $J_{\text{soft}}$ par rapport à un bloc, l'ancienne valeur étant un candidat.</div>
+<div class="qed">∎</div>
+</div></details>
+<div class="box thm"><div class="box-title">Proposition — les deux limites de $\beta$ <span class="hint">hors slides</span></div>
+Quand $\beta\to+\infty$, $r_{ik}\to1$ pour le centre le plus proche (s'il est unique) et $0$ sinon : on retrouve le k-means. Quand $\beta\to0$, $r_{ik}\to\frac1K$ et tous les centres se rapprochent de la moyenne globale $\bar x$.
+</div>
+<details class="proof"><summary>Preuve</summary>
+<div class="proof-body">
+<div class="step"><b>① $\beta\to\infty$.</b> Soit $k_i$ le centre le plus proche et $\delta = \min_{\ell\ne k_i}(d_{i\ell}-d_{ik_i})>0$. En divisant numérateur et dénominateur par $e^{-\beta d_{ik_i}}$ : $r_{ik} = e^{-\beta(d_{ik}-d_{ik_i})}/\big(1+\sum_{\ell\ne k_i}e^{-\beta(d_{i\ell}-d_{ik_i})}\big)$. Chaque exponentielle d'indice $\ne k_i$ est $\le e^{-\beta\delta}\to0$.</div>
+<div class="step"><b>② $\beta\to0$.</b> $e^{-\beta d_{ik}}\to1$ pour tout $k$, donc $r_{ik}\to1/K$, et la mise à jour donne $\mu_k\to\frac{\sum_i x_i/K}{N/K} = \bar x$ pour tout $k$.</div>
+<div class="qed">∎</div>
+</div></details>
+<div data-scene="km-soft"></div>
+<div class="box def"><div class="box-title">K-means dur contre soft (slide 18)</div>
+Sur l'exemple $0, 4, 10$ avec $\mu^{(0)} = (0,4)$ : le k-means dur reste en $(0,7)$ ; le soft k-means avec $\beta = 0{,}1$ converge vers $\mu\approx(1{,}95;\ 9{,}67)$, avec $r_{2,1}\approx0{,}94$ (le point en 4 appartient surtout au groupe 1). Les affectations souples laissent le point en 4 tirer le premier centre, ce qui corrige l'échec.
+</div>
+<details class="objs" open><summary>Les objets en jeu</summary><dl>
+<dt>$r_{ik}$</dt><dd><span class="ty">un softmax des $-\beta d_{ik}$</span>La même fonction que la régression softmax (chapitre 2) et que l'attention (chapitre 8), avec des scores $-\beta\|x_i-\mu_k\|^2$.</dd>
+<dt>$\beta$</dt><dd><span class="ty">échelle des distances</span>Seul $\beta d_{ik}$ compte : $\beta$ fixe la distance (de l'ordre de $1/\sqrt\beta$) en dessous de laquelle deux centres « se partagent » un point.</dd>
+<dt>$-\beta^{-1}H(r_i)$</dt><dd><span class="ty">récompense le doute</span>Sans lui, l'optimum en $r$ est toujours un sommet du simplexe (affectation dure). C'est le même terme d'entropie que dans l'ELBO (chapitre 7) et dans la borne $F$ (§6).</dd>
+</dl></details>
+
+<!-- ===================================================================== -->
+<h2 id="gmm"><span class="num">5</span>Mélanges de gaussiennes</h2>
+<div class="sources"><a class="src slides" href="../Slides/10-kmeans.pdf#page=15" target="_blank">Slides p.15, 19–24</a><a class="src book" href="../Textbooks/Pattern%20Recognition%20and%20Machine%20Learning.pdf#page=450" target="_blank">PRML §9.2</a><a class="src book" href="../Textbooks/Pattern%20Recognition%20and%20Machine%20Learning.pdf#page=452" target="_blank">PRML §9.2.1 Maximum likelihood</a></div>
+<div class="box road"><div class="box-title">Où on en est</div><div class="road-row"><span class="rk ok">Acquis</span><div>Affectations souples $r_{ik}\propto e^{-\beta\|x_i-\mu_k\|^2}$ (§4).</div></div><div class="road-row"><span class="rk q">Il manque</span><div>Des groupes de formes, de tailles et de proportions différentes : la même distance euclidienne pour tous ne suffit pas.</div></div><div class="road-row"><span class="rk go">Cette partie</span><div>La motivation 2 ; modèle de mélange fini et tirage en deux temps ; GMM et distance de Mahalanobis ; responsabilités = loi a posteriori ; le problème du maximum de vraisemblance.</div></div></div>
+<div class="vids"><div class="vids-title">▶ Vidéos<span>en anglais · s'ouvrent sur YouTube</span></div><div class="vids-grid"><a class="vid" href="https://www.youtube.com/watch?v=qMTuMa86NzU" target="_blank" rel="noopener"><span class="vid-thumb">▶<img src="https://i.ytimg.com/vi/qMTuMa86NzU/mqdefault.jpg" loading="lazy" alt="" onerror="this.remove()"></span><span class="vid-body"><span class="vid-ch">Alexander Ihler</span><span class="vid-t" style="display:block">Clustering (4): Gaussian Mixture Models and EM</span><span class="vid-why" style="display:block">Du k-means au GMM, responsabilités, mises à jour d'EM, avec des figures 2D.</span></span></a><a class="vid" href="https://www.youtube.com/watch?v=DODphRRL79c" target="_blank" rel="noopener"><span class="vid-thumb">▶<img src="https://i.ytimg.com/vi/DODphRRL79c/mqdefault.jpg" loading="lazy" alt="" onerror="this.remove()"></span><span class="vid-body"><span class="vid-ch">Machine Learning TV</span><span class="vid-t" style="display:block">Gaussian Mixture Models for Clustering</span><span class="vid-why" style="display:block">Le modèle de mélange et son interprétation probabiliste.</span></span></a></div></div>
+
+<div class="box def"><div class="box-title">Motivation 2 : au-delà de la distance euclidienne (slide 15)</div>
+Un groupe 1 très étalé dans une direction, un groupe 2 petit et serré. Le point $x_i$ est à distance euclidienne $d_1 = 4$ de $\mu_1$ et $d_2 = 1$ de $\mu_2$ : il est affecté au groupe 2.
+<ul><li>Pourtant il se trouve dans l'étalement principal du groupe allongé : la même métrique euclidienne est utilisée pour les deux groupes.</li></ul>
+<b>Comment corriger ?</b> Par des distances propres à chaque groupe.
+</div>
+<div class="box def"><div class="box-title">Des scores de distance aux scores de densité (slide 19)</div>
+$$\underbrace{r_{ik}\propto\exp\big(-\beta\|x_i-\mu_k\|_2^2\big)}_{\text{soft k-means}}\ \longrightarrow\ \underbrace{r_{ik}\propto\pi_k\,\N(x_i\mid\mu_k,\Sigma_k)}_{\text{GMM}}.$$
+<ul>
+<li><b>Forme et échelle</b> : chaque covariance $\Sigma_k$ décrit comment le groupe s'étale dans les différentes directions ;</li>
+<li><b>Prévalence</b> : le poids $\pi_k$ est la probabilité de tirer un point du groupe $k$ ;</li>
+<li><b>Affectation souple</b> : normaliser ces scores sur $k$ donne la probabilité a posteriori que $x_i$ appartienne à chaque groupe.</li>
+</ul>
+</div>
+<div class="box def"><div class="box-title">Modèle de mélange fini (slide 20)</div>
+Un modèle de mélange fini combine $K$ lois composantes :
+$$p(x) = \sum_{k\in[K]}p(x,z = k) = \sum_{k\in[K]}p_k(x)\,p(z = k) = \sum_{k\in[K]}p_k(x)\cdot\pi_k.$$
+$z$ est la variable latente qui indique la composante ; les $\pi_k := p(z = k)$ sont les paramètres de mélange, avec $\sum_k\pi_k = 1$ et $\pi_k\in[0,1]$.<br>
+<b>Tirage</b> : ① tirer l'indice de composante $z\sim\mathrm{Categorical}(\pi_1,\dots,\pi_K)$ ; ② sachant $z = k$, tirer $x\sim p_k(\cdot)$.
+</div>
+<div class="box def"><div class="box-title">Mélange de gaussiennes (GMM, slide 21)</div>
+$$p_\theta(x) = \sum_{k=1}^K\pi_k\,\N(x\mid\mu_k,\Sigma_k),\qquad\theta = \{\mu_k,\Sigma_k,\pi_k\}_{k=1}^K,\qquad\pi_k\ge0,\ \ \sum_k\pi_k = 1,\ \ \Sigma_k\succ0.$$
+Un GMM peut représenter des lois multimodales, mais un mélange n'a pas forcément plusieurs modes. À $\mu_k,\Sigma_k$ fixés, plus on est loin, plus la densité est faible :
+$$\N(x\mid\mu_k,\Sigma_k)\propto\exp\Big(-\frac12d_k(x)^2\Big),\qquad d_k(x)^2 = (x-\mu_k)^\top\Sigma_k^{-1}(x-\mu_k).$$
+Si $\Sigma_k = \sigma^2I$, alors $d_k(x)^2 = \|x-\mu_k\|_2^2/\sigma^2$. Exemple (livre MML) : $p(x) = 0{,}5\,\N(x\mid-2,\frac12)+0{,}2\,\N(x\mid1,2)+0{,}3\,\N(x\mid4,1)$.
+</div>
+<div class="box thm"><div class="box-title">Proposition — un mélange de densités est une densité, et le tirage en deux temps la réalise</div></div>
+<details class="proof"><summary>Preuve</summary>
+<div class="proof-body">
+<div class="step"><b>① Positivité et masse.</b> $p(x) = \sum_k\pi_kp_k(x)\ge0$ et $\int p = \sum_k\pi_k\int p_k = \sum_k\pi_k = 1$ (on échange somme finie et intégrale).</div>
+<div class="step"><b>② Le tirage.</b> Le couple tiré a la loi jointe $p(z = k)\,p(x\mid z = k) = \pi_kp_k(x)$. La loi de $x$ seul s'obtient en sommant sur $z$ (marginalisation) : $\sum_k\pi_kp_k(x) = p(x)$.</div>
+<div class="qed">∎</div>
+</div></details>
+<div data-scene="gmm-mix"></div>
+<div class="box thm"><div class="box-title">Proposition — la responsabilité est la loi a posteriori de $z$ (formule de Bayes)</div>
+$$p_\theta(z = k\mid x) = \frac{\pi_k\,\N(x\mid\mu_k,\Sigma_k)}{\sum_{\ell=1}^K\pi_\ell\,\N(x\mid\mu_\ell,\Sigma_\ell)}.$$
+</div>
+<details class="proof"><summary>Preuve</summary>
+<div class="proof-body">
+<div class="step"><b>① Bayes.</b> $p(z = k\mid x) = p(x,z = k)/p(x)$, avec $p(x,z = k) = \pi_k\N(x\mid\mu_k,\Sigma_k)$ et $p(x) = \sum_\ell p(x,z = \ell)$. C'est exactement « normaliser les scores sur $k$ » de la slide 19.</div>
+<div class="qed">∎</div>
+</div></details>
+<p>Le cas de la slide 22 : avec les distances euclidiennes, $x_i$ va au groupe 2 ($d_1 = 4$, $d_2 = 1$) ; avec les distances propres aux groupes, $d_1 = 1{,}25$ et $d_2 = 4$, et le GMM donne $r_{i1}\approx0{,}985$. La covariance propre à chaque groupe corrige le désaccord.</p>
+<div data-scene="gmm-dist"></div>
+<div class="box def"><div class="box-title">But de l'apprentissage : le maximum de vraisemblance (slides 23–24)</div>
+Étant donné un échantillon i.i.d. $\mathcal D = \{x_1,\dots,x_N\}$, on maximise
+$$\mathcal L(\theta) = \log p(\mathcal D\mid\theta) = \log\prod_{n=1}^Np(x_n\mid\theta) = \sum_{n=1}^N\log\sum_{k=1}^K\pi_k\,\N(x_n\mid\mu_k,\Sigma_k).$$
+<ul>
+<li><b>Non convexe</b> : maximiser $\mathcal L(\theta)$ est un problème non convexe. Si les étiquettes $z_n$ étaient connues, on ajusterait chaque gaussienne séparément ; sans elles, il faut inférer les appartenances et ajuster les gaussiennes <b>ensemble</b>. Différents groupements mènent à différents optima locaux, comme pour le k-means.</li>
+<li>On utilise l'algorithme <b>EM</b> (expectation-maximization).</li>
+</ul>
+</div>
+<div class="box q"><div class="box-title">Pourquoi pas une méthode de gradient ? (slide 24)</div>
+<details class="proof"><summary>Réponse</summary><div class="proof-body"><p>On pourrait faire une montée de gradient sur $\mathcal L(\theta)$, mais (i) il faudrait régler un pas d'apprentissage, (ii) il faudrait maintenir les contraintes $\pi_k\ge0$, $\sum_k\pi_k = 1$ et $\Sigma_k\succ0$ à chaque pas (projection ou reparamétrisation, par exemple $\pi = \mathrm{softmax}(a)$, $\Sigma = LL^\top$). Pour un GMM, EM donne au contraire des mises à jour <b>en forme close</b>, sans pas d'apprentissage, qui respectent automatiquement les contraintes, et les étapes exactes d'EM ne font jamais baisser la vraisemblance (§6). Le gradient reste utile quand l'étape M n'a pas de forme close (le VAE du chapitre 7, par exemple).</p></div></details></div>
+<div class="box thm"><div class="box-title">Proposition — la vraisemblance d'un GMM n'est pas bornée (effondrement d'une covariance) <span class="hint">slide 39 · PRML §9.2.1</span></div>
+Avec $K\ge2$ et $\Sigma_k = \sigma_k^2I$ libres, $\sup_\theta\mathcal L(\theta) = +\infty$ dès que les données ne sont pas toutes égales.
+</div>
+<details class="proof"><summary>Preuve</summary>
+<div class="proof-body">
+<div class="step"><b>① Une composante sur un point.</b> On pose $\mu_1 = x_1$, $\Sigma_1 = \sigma^2I$, $\pi_1 = \pi_2 = \frac12$, et la composante 2 est une gaussienne fixe de covariance $I$ (centrée par exemple sur la moyenne des données).</div>
+<div class="step"><b>② Le terme de $x_1$.</b> $p(x_1)\ge\frac12\N(x_1\mid x_1,\sigma^2I) = \frac12(2\pi\sigma^2)^{-D/2}\to+\infty$ quand $\sigma\to0$.</div>
+<div class="step"><b>③ Les autres termes.</b> Pour $n\ne1$, $p(x_n)\ge\frac12\N(x_n\mid\mu_2,I)$, une constante $>0$ qui ne dépend pas de $\sigma$. Donc $\mathcal L\ge\log p(x_1)+\sum_{n\ne1}\log(\text{cste})\to+\infty$. Avec une seule gaussienne ($K = 1$), c'est impossible : rétrécir $\sigma$ écraserait la densité des autres points. Remède : imposer $\Sigma_k\succeq\varepsilon I$.</div>
+<div class="qed">∎</div>
+</div></details>
+<details class="objs" open><summary>Les objets en jeu</summary><dl>
+<dt>$\pi_k\N(x\mid\mu_k,\Sigma_k)$</dt><dd><span class="ty">score du groupe $k$</span>Une densité jointe $p(x,z = k)$. Le facteur $\pi_k$ favorise les gros groupes, $|\Sigma_k|^{-1/2}$ les groupes serrés, $e^{-d_k^2/2}$ les groupes proches.</dd>
+<dt>$d_k(x)$</dt><dd><span class="ty">distance de Mahalanobis</span>La distance euclidienne après avoir « blanchi » le groupe $k$ : on mesure en nombre d'écarts-types dans chaque direction. Ses lignes de niveau sont des ellipses.</dd>
+<dt>$z_n$</dt><dd><span class="ty">latente, discrète</span>La composante qui a produit $x_n$. Si on la connaissait, ce serait de l'estimation gaussienne classique, groupe par groupe.</dd>
+</dl></details>
+
+<!-- ===================================================================== -->
+<h2 id="em"><span class="num">6</span>L'algorithme EM</h2>
+<div class="sources"><a class="src slides" href="../Slides/10-kmeans.pdf#page=25" target="_blank">Slides p.25–39</a><a class="src book" href="../Textbooks/Pattern%20Recognition%20and%20Machine%20Learning.pdf#page=455" target="_blank">PRML §9.2.2 EM for Gaussian mixtures</a><a class="src book" href="../Textbooks/Pattern%20Recognition%20and%20Machine%20Learning.pdf#page=459" target="_blank">PRML §9.3</a><a class="src book" href="../Textbooks/Pattern%20Recognition%20and%20Machine%20Learning.pdf#page=470" target="_blank">PRML §9.4</a></div>
+<div class="box road"><div class="box-title">Où on en est</div><div class="road-row"><span class="rk ok">Acquis</span><div>Le GMM et son objectif $\mathcal L(\theta) = \sum_n\log\sum_k\pi_k\N(x_n\mid\mu_k,\Sigma_k)$, non convexe (§5).</div></div><div class="road-row"><span class="rk q">Il manque</span><div>Un algorithme qui le maximise sans pas d'apprentissage, en respectant les contraintes.</div></div><div class="road-row"><span class="rk go">Cette partie</span><div>La borne inférieure $F(r,\theta)$ (Jensen) ; EM comme maximisation alternée ; étape E (preuve) ; étape M : $Q$, moyennes, covariances, poids (preuves) ; croissance de $\mathcal L$ (preuve) ; propriétés.</div></div></div>
+<div class="vids"><div class="vids-title">▶ Vidéos<span>en anglais · s'ouvrent sur YouTube</span></div><div class="vids-grid"><a class="vid" href="https://www.youtube.com/watch?v=REypj2sy_5U" target="_blank" rel="noopener"><span class="vid-thumb">▶<img src="https://i.ytimg.com/vi/REypj2sy_5U/mqdefault.jpg" loading="lazy" alt="" onerror="this.remove()"></span><span class="vid-body"><span class="vid-ch">Victor Lavrenko</span><span class="vid-t" style="display:block">EM algorithm: how it works</span><span class="vid-why" style="display:block">EM sur un mélange 1D : responsabilités, puis moyennes et variances pondérées.</span></span></a><a class="vid" href="https://www.youtube.com/watch?v=rVfZHWTwXSA" target="_blank" rel="noopener"><span class="vid-thumb">▶<img src="https://i.ytimg.com/vi/rVfZHWTwXSA/mqdefault.jpg" loading="lazy" alt="" onerror="this.remove()"></span><span class="vid-body"><span class="vid-ch">Stanford CS229 (Andrew Ng)</span><span class="vid-t" style="display:block">Lecture 13 - Expectation-Maximization Algorithms</span><span class="vid-why" style="display:block">La dérivation par Jensen et la borne inférieure, comme aux slides 25–38 (1 h 20).</span></span></a><a class="vid" href="https://www.youtube.com/watch?v=AnbiNaVp3eQ" target="_blank" rel="noopener"><span class="vid-thumb">▶<img src="https://i.ytimg.com/vi/AnbiNaVp3eQ/mqdefault.jpg" loading="lazy" alt="" onerror="this.remove()"></span><span class="vid-body"><span class="vid-ch">mathematicalmonk</span><span class="vid-t" style="display:block">(ML 16.3) Expectation-Maximization (EM) algorithm</span><span class="vid-why" style="display:block">EM en général, au tableau, avec la preuve de monotonie.</span></span></a></div></div>
+
+<div class="box def"><div class="box-title">Une borne inférieure paramétrée par des affectations souples (slide 25)</div>
+Pour des $r_{nk}>0$ avec $\sum_kr_{nk} = 1$, on définit
+$$F(r,\theta) := \underbrace{\sum_{n,k}r_{nk}\log p_\theta(x_n,z_n = k)}_{\text{ajustement au modèle}}+\underbrace{\Big(-\sum_{n,k}r_{nk}\log r_{nk}\Big)}_{\text{incertitude des affectations (entropie)}}\ \le\ \mathcal L(\theta).$$
+<ul><li>Pourquoi une borne ? Pour un GMM, fixer $r$ ou $\theta$ donne une mise à jour en forme close pour l'autre.</li><li>L'optimisation <b>jointe</b> reste non convexe.</li></ul>
+</div>
+<div class="box thm"><div class="box-title">Proposition — $F(r,\theta)\le\mathcal L(\theta)$ (inégalité de Jensen, slide 25), avec écart exact $\sum_n\mathrm{KL}\big(r_n\,\|\,p_\theta(z_n\mid x_n)\big)$</div></div>
+<details class="proof"><summary>Preuve</summary>
+<div class="proof-body">
+<div class="step"><b>① Réécrire $\mathcal L$ comme une espérance.</b> On note $r_n(k) = r_{nk}$, une loi sur $[K]$. Pour chaque $n$ :
+$$\log p_\theta(x_n) = \log\sum_kp_\theta(x_n,z_n = k) = \log\sum_kr_n(k)\frac{p_\theta(x_n,z_n = k)}{r_n(k)} = \log\E_{z_n\sim r_n}\Big[\frac{p_\theta(x_n,z_n)}{r_n(z_n)}\Big].$$</div>
+<div class="step"><b>② Jensen.</b> $\log$ est concave, donc $\log\E[Y]\ge\E[\log Y]$ :
+$$\log p_\theta(x_n)\ \ge\ \E_{z_n\sim r_n}\Big[\log\frac{p_\theta(x_n,z_n)}{r_n(z_n)}\Big] = \sum_kr_{nk}\log p_\theta(x_n,z_n = k)-\sum_kr_{nk}\log r_{nk}.$$
+On somme sur $n$ : $\mathcal L(\theta)\ge F(r,\theta)$.</div>
+<div class="step"><b>③ L'écart exact</b> <span class="hint">hors slides</span>. Avec $p_\theta(x_n,z_n = k) = p_\theta(x_n)\,p_\theta(z_n = k\mid x_n)$ :
+$$\sum_kr_{nk}\log\frac{p_\theta(x_n,z_n = k)}{r_{nk}} = \log p_\theta(x_n)\underbrace{\textstyle\sum_kr_{nk}}_{=1}-\sum_kr_{nk}\log\frac{r_{nk}}{p_\theta(z_n = k\mid x_n)},$$
+d'où $\mathcal L(\theta)-F(r,\theta) = \sum_n\mathrm{KL}\big(r_n\,\|\,p_\theta(z_n\mid x_n)\big)\ge0$. C'est exactement la décomposition de l'<b>ELBO</b> du chapitre 7 : $F$ est l'ELBO, avec une loi $q(z_n) = r_n$ discrète.</div>
+<div class="qed">∎</div>
+</div></details>
+<div class="box def"><div class="box-title">EM : maximisation alternée (slide 26)</div>
+<ul>
+<li><b>Initialisation</b> : des paramètres valides $\theta^{\text{old}}$.</li>
+<li><b>Étape E</b> : on fixe les paramètres et on optimise les affectations : $r\leftarrow\argmax_{\tilde r}F(\tilde r,\theta^{\text{old}})$.</li>
+<li><b>Étape M</b> : on fixe les affectations et on optimise les paramètres : $\theta^{\text{new}}\leftarrow\argmax_\theta F(r,\theta)$.</li>
+<li>On recommence avec $\theta^{\text{old}}\leftarrow\theta^{\text{new}}$.</li>
+</ul>
+Chaque étape fixe un bloc de variables et maximise <b>la même borne</b> $F$ par rapport à l'autre — exactement la structure du k-means (§3).
+</div>
+
+<h3 id="estep">Étape E : les affectations</h3>
+<div class="box thm"><div class="box-title">Proposition — l'étape E donne les probabilités a posteriori, et rend la borne serrée (slides 31–32)</div>
+La solution de $\max_rF(r,\theta^{\text{old}})$ sous $r_{nk}\ge0$, $\sum_kr_{nk} = 1$ est
+$$r_{nk} = p_{\theta^{\text{old}}}(z_n = k\mid x_n) = \frac{\pi_k^{\text{old}}\N(x_n\mid\mu_k^{\text{old}},\Sigma_k^{\text{old}})}{\sum_\ell\pi_\ell^{\text{old}}\N(x_n\mid\mu_\ell^{\text{old}},\Sigma_\ell^{\text{old}})},$$
+et en ce point $F(r,\theta^{\text{old}}) = \mathcal L(\theta^{\text{old}})$.
+</div>
+<details class="proof"><summary>Preuve — multiplicateur de Lagrange (slide 32)</summary>
+<div class="proof-body">
+<div class="step"><b>① Un sous-problème par point.</b> $F$ est une somme sur $n$ de termes ne dépendant que de $r_n$. On pose $a_{nk} = p_{\theta^{\text{old}}}(x_n,z_n = k)>0$ et on maximise $f_n(r_n) = \sum_kr_{nk}(\log a_{nk}-\log r_{nk})$ sous $\sum_kr_{nk} = 1$. Ce problème est concave en $r_n$ ($-r\log r$ est concave, le reste linéaire) sur un domaine convexe : un point critique est le maximum.</div>
+<div class="step"><b>② Lagrangien.</b> $A(r_n,\lambda_n) = \sum_kr_{nk}(\log a_{nk}-\log r_{nk})+\lambda_n\big(\sum_kr_{nk}-1\big)$ et
+$$\frac{\partial A}{\partial r_{nk}} = \log a_{nk}-\log r_{nk}-1+\lambda_n = 0\iff r_{nk} = a_{nk}\,e^{\lambda_n-1}.$$</div>
+<div class="step"><b>③ Normaliser.</b> $\sum_kr_{nk} = 1$ donne $e^{\lambda_n-1} = 1/\sum_\ell a_{n\ell}$, d'où $r_{nk} = a_{nk}/\sum_\ell a_{n\ell} = p_{\theta^{\text{old}}}(z_n = k\mid x_n)$ (formule de Bayes).</div>
+<div class="step"><b>④ Borne serrée.</b> En ce point $r_{nk} = a_{nk}/p_{\theta^{\text{old}}}(x_n)$, donc $\log\frac{a_{nk}}{r_{nk}} = \log p_{\theta^{\text{old}}}(x_n)$ pour tout $k$, et $f_n(r_n) = \sum_kr_{nk}\log p_{\theta^{\text{old}}}(x_n) = \log p_{\theta^{\text{old}}}(x_n)$. En sommant : $F = \mathcal L(\theta^{\text{old}})$. (Avec l'écart exact : les KL sont nuls.)</div>
+<div class="qed">∎</div>
+</div></details>
+<p>Géométriquement : à $\theta^{\text{old}}$, l'étape E construit une fonction $\theta\mapsto F(r,\theta)$ qui est <b>sous</b> $\mathcal L$ partout et la <b>touche</b> en $\theta^{\text{old}}$ ; l'étape M monte au sommet de cette fonction. Dans la scène, on n'apprend qu'une moyenne pour pouvoir dessiner $\mathcal L$ :</p>
+<div data-scene="em-bound"></div>
+
+<h3 id="mstep">Étape M : les paramètres</h3>
+<div class="box def"><div class="box-title">Étape M : de $F$ à $Q$ (slides 33–34)</div>
+$$F(r,\theta) = \underbrace{\sum_{n,k}r_{nk}\log p_\theta(x_n,z_n = k)}_{Q(\theta;\theta^{\text{old}})}+\underbrace{\Big(-\sum_{n,k}r_{nk}\log r_{nk}\Big)}_{H(r)}.$$
+$r$ étant fixé, $H(r)$ ne dépend pas de $\theta$ : maximiser $F$ revient à maximiser $Q$, la <b>log-vraisemblance complète espérée</b>.<br>
+<b>Données complètes</b> : les points observés $X = \{x_n\}$ <b>et</b> les étiquettes cachées $Z = \{z_n\}$. Leur log-vraisemblance est
+$$\mathcal L_c(\theta;X,Z) = \sum_n\log p_\theta(x_n,z_n) = \sum_{n,k}\mathbb 1[z_n = k]\,\log p_\theta(x_n,z_n = k),$$
+et en moyennant sous la loi a posteriori de l'étape E :
+$$Q(\theta;\theta^{\text{old}}) := \E_{Z\sim p_{\theta^{\text{old}}}(\cdot\mid X)}\big[\mathcal L_c(\theta;X,Z)\big] = \sum_{n,k}r_{nk}\log p_\theta(x_n,z_n = k).$$
+Chaque indicatrice est remplacée par son espérance : $\E_{z_n\mid x_n,\theta^{\text{old}}}\big[\mathbb 1[z_n = k]\big] = r_{nk}$. $\theta^{\text{old}}$ fixe la loi qui sert à moyenner ; l'étape M optimise $\theta$ dans $Q$. En développant la log-densité gaussienne :
+$$Q(\theta;\theta^{\text{old}}) = \sum_{n,k}r_{nk}\Big(\log\pi_k-\frac12\log|\Sigma_k|-\frac12(x_n-\mu_k)^\top\Sigma_k^{-1}(x_n-\mu_k)\Big)+C,\qquad C = -\frac{ND}2\log(2\pi).$$
+</div>
+<div class="box thm"><div class="box-title">Proposition — moyennes (slide 35)</div>
+Avec $N_k = \sum_nr_{nk}>0$ : $\displaystyle\mu_k^{\text{new}} = \frac{\sum_nr_{nk}x_n}{N_k}$, la même forme que la mise à jour du soft k-means.
+</div>
+<details class="proof"><summary>Preuve</summary>
+<div class="proof-body">
+<div class="step"><b>① Les termes en $\mu_k$.</b> À $r_{nk}$ et $\Sigma_k$ fixés, $Q_k(\mu_k) = -\frac12\sum_nr_{nk}(x_n-\mu_k)^\top\Sigma_k^{-1}(x_n-\mu_k)+C$, une quadratique concave (car $\Sigma_k^{-1}\succ0$).</div>
+<div class="step"><b>② Gradient nul.</b> Avec $\nabla_\mu\frac12(x-\mu)^\top A(x-\mu) = -A(x-\mu)$ pour $A$ symétrique : $\nabla_{\mu_k}Q_k = \Sigma_k^{-1}\sum_nr_{nk}(x_n-\mu_k) = 0$.</div>
+<div class="step"><b>③ Résoudre.</b> On multiplie à gauche par $\Sigma_k$ : $\sum_nr_{nk}x_n = N_k\mu_k^{\text{new}}$. Remarque : $\Sigma_k$ disparaît, la nouvelle moyenne ne dépend pas de la covariance.</div>
+<div class="qed">∎</div>
+</div></details>
+<div class="box thm"><div class="box-title">Proposition — covariances (slide 36)</div>
+Avec $S_k = \sum_nr_{nk}(x_n-\mu_k^{\text{new}})(x_n-\mu_k^{\text{new}})^\top$ : $\displaystyle\Sigma_k^{\text{new}} = \frac{S_k}{N_k}$, la covariance empirique pondérée.
+</div>
+<details class="proof"><summary>Preuve — en paramétrant par la précision $\Lambda_k = \Sigma_k^{-1}$</summary>
+<div class="proof-body">
+<div class="step"><b>① Les termes en $\Sigma_k$.</b> $-\frac12\log|\Sigma_k| = \frac12\log|\Lambda_k|$, et $v^\top\Lambda_kv = \tr(\Lambda_kvv^\top)$ (un scalaire est sa propre trace, et $\tr(AB) = \tr(BA)$). Donc
+$$Q_k(\Lambda_k) = \frac{N_k}2\log|\Lambda_k|-\frac12\tr(\Lambda_kS_k)+C,\qquad\Lambda_k\succ0.$$</div>
+<div class="step"><b>② Gradients matriciels.</b> Pour des matrices symétriques, $\nabla_\Lambda\log|\Lambda| = \Lambda^{-1}$ et $\nabla_\Lambda\tr(\Lambda S) = S$. D'où
+$$\nabla_{\Lambda_k}Q_k = \frac{N_k}2\Lambda_k^{-1}-\frac12S_k = 0\iff\Lambda_k^{-1} = \Sigma_k^{\text{new}} = \frac{S_k}{N_k}.$$</div>
+<div class="step"><b>③ Maximum.</b> $\log|\Lambda|$ est concave sur les matrices définies positives et $\tr(\Lambda S)$ linéaire : le point critique est le maximum. On utilise $\mu_k^{\text{new}}$ dans $S_k$ : le maximum joint en $(\mu_k,\Sigma_k)$ s'obtient en maximisant d'abord en $\mu_k$ (qui ne dépend pas de $\Sigma_k$).</div>
+<div class="qed">∎</div>
+</div></details>
+<div class="box thm"><div class="box-title">Proposition — poids de mélange (slide 37)</div>
+$\displaystyle\pi_k^{\text{new}} = \frac{N_k}N$ : la part de la composante $k$ dans l'effectif souple total.
+</div>
+<details class="proof"><summary>Preuve — multiplicateur de Lagrange</summary>
+<div class="proof-body">
+<div class="step"><b>① Les termes en $\pi$.</b> $Q(\pi) = \sum_{n,k}r_{nk}\log\pi_k+C = \sum_kN_k\log\pi_k+C$, à maximiser sous $\pi_k\ge0$ et $\sum_k\pi_k = 1$.</div>
+<div class="step"><b>② Lagrangien.</b> $A(\pi,\lambda) = \sum_kN_k\log\pi_k+\lambda\big(1-\sum_k\pi_k\big)$ ; $\dfrac{\partial A}{\partial\pi_k} = \dfrac{N_k}{\pi_k}-\lambda = 0\iff\pi_k = \dfrac{N_k}\lambda$.</div>
+<div class="step"><b>③ Normaliser.</b> $\sum_k\pi_k = 1$ donne $\lambda = \sum_kN_k = \sum_n\sum_kr_{nk} = N$. La fonction est concave ($\log$), et $\pi_k = N_k/N\ge0$ : c'est le maximum.</div>
+<div class="qed">∎</div>
+</div></details>
+<div class="box def"><div class="box-title">EM pour un GMM (slide 27)</div>
+<ul>
+<li><b>Initialisation</b> : $\pi_k>0$ avec $\sum_k\pi_k = 1$, des moyennes $\mu_k$ et des $\Sigma_k\succ0$.</li>
+<li><b>Étape E</b> (paramètres fixés, affectations souples) : $r_{nk} = \E_\theta\big[\mathbb 1[z_n = k]\mid x_n\big] = \dfrac{\pi_k\N(x_n\mid\mu_k,\Sigma_k)}{\sum_{\ell=1}^K\pi_\ell\N(x_n\mid\mu_\ell,\Sigma_\ell)}$.</li>
+<li><b>Étape M</b> ($r_{nk}$ fixés, $N_k = \sum_nr_{nk}$) : $\mu_k^{\text{new}} = \dfrac{\sum_nr_{nk}x_n}{N_k}$, $\ \pi_k^{\text{new}} = \dfrac{N_k}N$, $\ \Sigma_k^{\text{new}} = \dfrac{\sum_nr_{nk}(x_n-\mu_k^{\text{new}})(x_n-\mu_k^{\text{new}})^\top}{N_k}$.</li>
+<li><b>Arrêt</b> quand $\Delta\mathcal L = \mathcal L(\theta^{\text{new}})-\mathcal L(\theta)\le\varepsilon$.</li>
+</ul>
+Chaque étape a une solution en forme close : aucun pas d'apprentissage.
+</div>
+<div class="box thm"><div class="box-title">Proposition — EM ne fait jamais baisser la vraisemblance (slide 38)</div>
+$$\mathcal L(\theta^{\text{old}})\ \underset{\text{étape E}}{=}\ F(r,\theta^{\text{old}})\ \underset{\text{étape M}}{\le}\ F(r,\theta^{\text{new}})\ \underset{\text{borne}}{\le}\ \mathcal L(\theta^{\text{new}}).$$
+Chaque itération exacte et bien définie ne fait pas baisser $\mathcal L$ ; un optimum global n'est pas garanti.
+</div>
+<details class="proof"><summary>Preuve</summary>
+<div class="proof-body">
+<div class="step"><b>① L'égalité.</b> Avec les responsabilités $r_{nk} = p_{\theta^{\text{old}}}(z_n = k\mid x_n)$ :
+$$F(r,\theta^{\text{old}}) = \sum_{n,k}r_{nk}\log\frac{p_{\theta^{\text{old}}}(x_n,z_n = k)}{r_{nk}} = \sum_n\Big(\underbrace{\textstyle\sum_kr_{nk}}_{=1}\Big)\log p_{\theta^{\text{old}}}(x_n) = \mathcal L(\theta^{\text{old}}).$$</div>
+<div class="step"><b>② La première inégalité.</b> L'étape M maximise $Q$, donc $F = Q+H(r)$ ($H(r)$ constant) : $\theta^{\text{old}}$ est un candidat, donc $F(r,\theta^{\text{new}})\ge F(r,\theta^{\text{old}})$.</div>
+<div class="step"><b>③ La seconde.</b> C'est la borne de Jensen, vraie pour tout $r$ et tout $\theta$, appliquée en $\theta^{\text{new}}$.</div>
+<div class="step"><b>④ Pas de global.</b> La suite $\mathcal L(\theta^{(t)})$ est croissante ; elle se stabilise en un point où ni E ni M n'améliorent (en général un maximum local ou un point selle de $\mathcal L$). Elle peut aussi partir vers $+\infty$ si une covariance s'effondre (§5) : c'est le « bien défini » de la slide.</div>
+<div class="qed">∎</div>
+</div></details>
+<div data-scene="gmm-em"></div>
+<div class="box def"><div class="box-title">Propriétés d'EM pour les GMM (slide 39)</div>
+<ul>
+<li><b>Vraisemblance croissante</b> : chaque itération exacte et bien définie ne fait pas baisser $\mathcal L$ ; une petite augmentation de $\mathcal L$ fournit un critère d'arrêt pratique.</li>
+<li><b>Sensibilité à l'initialisation</b> : des paramètres de départ différents peuvent donner des solutions différentes. On utilise les centres d'un <b>k-means</b> comme moyennes initiales, ou on lance EM depuis plusieurs points de départ et on garde la plus grande log-vraisemblance.</li>
+<li><b>Effondrement d'une covariance</b> : une composante peut se rétrécir sur un point et rendre la vraisemblance non bornée. On garde un étalement minimal dans toutes les directions : $\Sigma_k\succeq\varepsilon I$ pour un $\varepsilon>0$.</li>
+</ul>
+</div>
+<details class="objs" open><summary>Les objets en jeu</summary><dl>
+<dt>$F(r,\theta)$</dt><dd><span class="ty">borne inférieure de $\mathcal L$</span>Fonction de deux blocs. $\max_r$ et $\max_\theta$ sont faciles séparément, comme $J$ pour le k-means (mais on maximise).</dd>
+<dt>$r_{nk}$</dt><dd><span class="ty">loi a posteriori</span>« Probabilité que $x_n$ vienne de la composante $k$ », calculée avec les paramètres courants. C'est l'« E » d'EM : l'espérance de l'indicatrice $\mathbb 1[z_n = k]$.</dd>
+<dt>$Q(\theta;\theta^{\text{old}})$</dt><dd><span class="ty">vraisemblance complète espérée</span>Comme si on connaissait les étiquettes, mais chaque point compte pour $r_{nk}$ dans le groupe $k$. D'où des estimateurs « pondérés » : moyenne, covariance et proportion.</dd>
+<dt>$N_k$</dt><dd><span class="ty">effectif souple</span>$\sum_kN_k = N$. Si $N_k\to0$, la composante meurt ; si elle se concentre sur un seul point, sa covariance s'effondre.</dd>
+</dl></details>
+<div class="box q"><div class="box-title">Pourquoi la solution de l'étape E est-elle la loi a posteriori ? (« Why? », slide 31)</div>
+<details class="proof"><summary>Réponse</summary><div class="proof-body"><p>Deux arguments. ① Le calcul de la slide 32 (Lagrange) : la loi qui maximise $\sum_kr_k(\log a_k-\log r_k)$ sur le simplexe est $r_k\propto a_k$, et $a_k = p(x_n,z_n = k)$ normalisé en $k$ est $p(z_n = k\mid x_n)$. ② Plus directement : $\mathcal L(\theta)-F(r,\theta) = \sum_n\mathrm{KL}(r_n\,\|\,p_\theta(z_n\mid x_n))$ ; $\mathcal L(\theta^{\text{old}})$ ne dépend pas de $r$, donc maximiser $F$ en $r$ revient à minimiser ces KL, qui sont nuls exactement quand $r_n$ est la loi a posteriori. La slide fait aussi remarquer que $F$ est concave en $r$ sur un domaine convexe : le point critique trouvé est bien le maximum.</p></div></details></div>
+<div class="box q"><div class="box-title">Qu'est-ce que la log-vraisemblance complète espérée ? (slide 33)</div>
+<details class="proof"><summary>Réponse</summary><div class="proof-body"><p>Si l'on connaissait les étiquettes $z_n$, on maximiserait la vraisemblance des données <b>complètes</b> $\mathcal L_c = \sum_n\log p_\theta(x_n,z_n)$ : un problème séparé par groupe, en forme close (la moyenne, la covariance et la proportion de chaque groupe). On ne les connaît pas, mais on connaît (avec $\theta^{\text{old}}$) leur loi a posteriori. On remplace donc $\mathcal L_c$ par son espérance sous cette loi : $Q = \E_Z[\mathcal L_c] = \sum_{n,k}r_{nk}\log p_\theta(x_n,z_n = k)$. Comme $\mathcal L_c$ est linéaire en les indicatrices $\mathbb 1[z_n = k]$, l'espérance revient à remplacer chaque indicatrice par $r_{nk}$ : on garde la forme close, avec des poids.</p></div></details></div>
+<div class="box q"><div class="box-title">Quel lien avec le VAE du chapitre 7 ?</div>
+<details class="proof"><summary>Réponse</summary><div class="proof-body"><p>C'est la même borne. Au chapitre 7, $\log p_\theta(x)\ge\mathcal L(x,\theta,\phi) = \E_{q_\phi(z\mid x)}[\log p_\theta(x,z)-\log q_\phi(z\mid x)]$, avec un écart $\mathrm{KL}(q_\phi(z\mid x)\,\|\,p_\theta(z\mid x))$ ; ici $q = r_n$ et l'écart est $\mathrm{KL}(r_n\,\|\,p_\theta(z_n\mid x_n))$. La différence : pour un GMM, $z$ est discrète et la loi a posteriori se calcule exactement (une somme de $K$ termes), donc l'étape E rend la borne <b>serrée</b> et l'étape M a une forme close. Pour le VAE, la loi a posteriori est intraitable : on la remplace par un encodeur $q_\phi$ appris (inférence amortie), et on monte $\phi$ et $\theta$ ensemble par gradient stochastique (astuce de reparamétrisation). EM est le cas où l'on sait faire chaque étape exactement.</p></div></details></div>
+
+<!-- ===================================================================== -->
+<h2 id="limit"><span class="num">7</span>Le k-means comme cas particulier d'EM</h2>
+<div class="sources"><a class="src slides" href="../Slides/10-kmeans.pdf#page=28" target="_blank">Slides p.28–29</a><a class="src book" href="../Textbooks/Pattern%20Recognition%20and%20Machine%20Learning.pdf#page=463" target="_blank">PRML §9.3.2 Relation to K-means</a></div>
+<div class="box road"><div class="box-title">Où on en est</div><div class="road-row"><span class="rk ok">Acquis</span><div>EM pour un GMM complet (§6) ; le soft k-means (§4) et le k-means (§3) ont la même structure alternée.</div></div><div class="road-row"><span class="rk q">Il manque</span><div>Le lien précis entre les trois.</div></div><div class="road-row"><span class="rk go">Cette partie</span><div>GMM restreint ⇒ soft k-means avec $\beta = 1/(2\sigma^2)$ (preuve) ; limite $\sigma^2\to0$ ⇒ k-means (preuve).</div></div></div>
+<div class="box thm"><div class="box-title">Proposition — GMM restreint = soft k-means (slide 28)</div>
+On fixe $\pi_k = 1/K$ et $\Sigma_k = \sigma^2I$ pour tous les groupes, avec un $\sigma^2>0$ commun, et on n'apprend que les moyennes. Alors l'étape E est l'affectation du soft k-means avec $\beta = \frac1{2\sigma^2}$, et l'étape M est sa mise à jour.
+</div>
+<details class="proof"><summary>Preuve</summary>
+<div class="proof-body">
+<div class="step"><b>① Étape E.</b> En substituant les paramètres restreints, avec $\N(x\mid\mu_k,\sigma^2I) = (2\pi\sigma^2)^{-D/2}e^{-\|x-\mu_k\|^2/(2\sigma^2)}$ :
+$$r_{nk} = \frac{\frac1K(2\pi\sigma^2)^{-D/2}e^{-\|x_n-\mu_k\|_2^2/(2\sigma^2)}}{\sum_\ell\frac1K(2\pi\sigma^2)^{-D/2}e^{-\|x_n-\mu_\ell\|_2^2/(2\sigma^2)}} = \frac{e^{-\|x_n-\mu_k\|_2^2/(2\sigma^2)}}{\sum_\ell e^{-\|x_n-\mu_\ell\|_2^2/(2\sigma^2)}}.$$
+Les poids égaux et le facteur de normalisation gaussien commun se simplifient : c'est l'affectation du soft k-means avec $\beta = 1/(2\sigma^2)$.</div>
+<div class="step"><b>② Étape M.</b> Seules les moyennes sont libres ; la proposition « moyennes » du §6 donne $\mu_k^{\text{new}} = \sum_nr_{nk}x_n/\sum_nr_{nk}$, la mise à jour du soft k-means.</div>
+<div class="qed">∎</div>
+</div></details>
+<div class="box thm"><div class="box-title">Proposition — limite des petites variances : le k-means (slide 29)</div>
+On garde $\pi_k = 1/K$, $\Sigma_k = \sigma^2I$ et on fait $\sigma^2\to0^+$. Si $x_n$ a un unique centre le plus proche $k_n$, alors $r_{nk}\to1$ si $k = k_n$ et $0$ sinon, et pour un groupe non vide $C_k = \{n : k_n = k\}$, la mise à jour devient $\mu_k^{\text{new}} = \frac1{|C_k|}\sum_{n\in C_k}x_n$ : on retrouve l'algorithme du k-means.
+</div>
+<details class="proof"><summary>Preuve</summary>
+<div class="proof-body">
+<div class="step"><b>① Diviser par le terme dominant.</b> Avec $d_{nk}^2 = \|x_n-\mu_k\|_2^2$ :
+$$r_{nk} = \frac{e^{-(d_{nk}^2-d_{nk_n}^2)/(2\sigma^2)}}{\sum_\ell e^{-(d_{n\ell}^2-d_{nk_n}^2)/(2\sigma^2)}}.$$
+Le terme $\ell = k_n$ du dénominateur vaut 1 ; pour $\ell\ne k_n$, $d_{n\ell}^2-d_{nk_n}^2>0$, donc l'exponentielle tend vers 0. Le dénominateur tend vers 1, le numérateur vers 1 si $k = k_n$ et 0 sinon.</div>
+<div class="step"><b>② La mise à jour.</b> $\sum_nr_{nk}x_n\to\sum_{n\in C_k}x_n$ et $\sum_nr_{nk}\to|C_k|>0$ : le quotient tend vers la moyenne de $C_k$.</div>
+<div class="step"><b>③ Et l'objectif</b> <span class="hint">hors slides</span>. $-2\sigma^2\big(\mathcal L(\theta)+N\log K+\frac{ND}2\log(2\pi\sigma^2)\big) = -2\sigma^2\sum_n\log\sum_ke^{-d_{nk}^2/(2\sigma^2)}\to\sum_n\min_kd_{nk}^2 = \tilde J(\mu)$ : maximiser la vraisemblance du GMM restreint devient, à la limite, minimiser l'objectif du k-means (voir aussi PRML éq. 9.43).</div>
+<div class="qed">∎</div>
+</div></details>
+<div data-scene="km-limit"></div>
+<div class="why">Le k-means fait donc des hypothèses cachées : des groupes <b>sphériques</b> (même $\sigma^2I$), de <b>même taille</b> ($\pi_k = 1/K$), et des affectations <b>certaines</b> ($\sigma^2\to0$). Le GMM appris par EM lève les trois. En pratique, on combine les deux : un k-means (rapide, $O(KND)$ par itération) pour initialiser, puis EM.</div>
+
+<!-- ===================================================================== -->
+<h2 id="summary"><span class="num">8</span>Résumé &amp; questions des slides</h2>
+<div class="box thm"><div class="box-title">Tout le chapitre en une chaîne</div>
+$$\underbrace{\min_{r,\mu}\textstyle\sum_{i,k}r_{ik}\|x_i-\mu_k\|^2}_{\text{§2}}\ \to\ \underbrace{r\leftrightarrow\mu,\ J\downarrow}_{\text{§3}}\ \to\ \underbrace{r_{ik}\propto e^{-\beta\|x_i-\mu_k\|^2}}_{\text{§4}}\ \to\ \underbrace{r_{nk}\propto\pi_k\N(x_n\mid\mu_k,\Sigma_k)}_{\text{§5}}$$
+$$\to\ \underbrace{\mathcal L(\theta)\ge F(r,\theta),\ \text{E : }r = p_\theta(z\mid x),\ \text{M : }\mu_k,\Sigma_k,\pi_k = N_k/N}_{\text{§6}}\ \to\ \underbrace{\pi_k = \tfrac1K,\ \Sigma_k = \sigma^2I,\ \sigma^2\to0\ \Rightarrow\ \text{k-means}}_{\text{§7}}$$
+</div>
+<div class="box def"><div class="box-title">Conclusion : du k-means aux GMM (slide 40)</div>
+<div class="notation-wrap"><table class="notation">
+<thead><tr><th></th><th>k-means dur</th><th>soft k-means</th><th>GMM par EM</th></tr></thead>
+<tbody>
+<tr><td>Affectations</td><td>un seul groupe</td><td>poids souples</td><td>probabilités a posteriori</td></tr>
+<tr><td>Géométrie des groupes</td><td>euclidienne</td><td>euclidienne, commune</td><td>$\Sigma_k$ apprises</td></tr>
+<tr><td>Mises à jour</td><td>centres</td><td>centres</td><td>moyennes, covariances, poids</td></tr>
+<tr><td>Objectif</td><td>distances au carré (min)</td><td>distances et entropie (min)</td><td>log-vraisemblance (max)</td></tr>
+</tbody></table></div>
+EM alterne l'inférence des appartenances cachées et l'estimation pondérée des paramètres du modèle. Les deux étapes maximisent la même borne inférieure $F$ ; à l'étape M, cela revient à maximiser $Q$. <b>Ensuite</b> (slide 40) : EM plus en détail — c'est le cours vidéo annoncé par le professeur.
+</div>
+<div class="box q"><div class="box-title">Comment corriger le problème des affectations dures ? (slide 14)</div>
+<details class="proof"><summary>Réponse</summary><div class="proof-body"><p>Par des affectations <b>souples</b> : chaque point se partage entre les centres avec des poids $r_{ik}\ge0$ de somme 1, qui décroissent avec la distance. Le point en 4 garde alors un poids $r_{21}>0$ (environ $0{,}94$ à la convergence pour $\beta = 0{,}1$) sur le premier centre et le tire vers lui : le soft k-means atteint $(1{,}95;\ 9{,}67)$ au lieu de rester bloqué en $(0,7)$. Ces poids viennent d'un objectif précis : $J$ plus $-\beta^{-1}$ fois l'entropie des affectations (slide 16).</p></div></details></div>
+<div class="box q"><div class="box-title">Comment corriger le problème de la distance euclidienne ? (slide 15)</div>
+<details class="proof"><summary>Réponse</summary><div class="proof-body"><p>Par une distance <b>propre à chaque groupe</b> : la distance de Mahalanobis $d_k(x) = \sqrt{(x-\mu_k)^\top\Sigma_k^{-1}(x-\mu_k)}$, qui mesure l'écart en nombre d'écarts-types du groupe $k$ dans chaque direction. On l'obtient naturellement en remplaçant le score $e^{-\beta\|x-\mu_k\|^2}$ par la densité $\pi_k\N(x\mid\mu_k,\Sigma_k)\propto\pi_k|\Sigma_k|^{-1/2}e^{-d_k(x)^2/2}$ : c'est le GMM. Il faut alors apprendre les $\Sigma_k$ et les $\pi_k$ : c'est le rôle d'EM.</p></div></details></div>
+<div class="box q"><div class="box-title">EM trouve-t-il le maximum de vraisemblance ?</div>
+<details class="proof"><summary>Réponse</summary><div class="proof-body"><p>Non, pas forcément. Il garantit seulement $\mathcal L(\theta^{(t+1)})\ge\mathcal L(\theta^{(t)})$, et s'arrête près d'un point stationnaire, qui dépend de l'initialisation (scène « borne inférieure » : deux bosses, deux points d'arrivée). De plus, le « maximum global » d'un GMM non contraint n'existe pas : la vraisemblance est non bornée (effondrement d'une covariance). En pratique : initialiser par un k-means, relancer plusieurs fois, garder la meilleure vraisemblance, et imposer $\Sigma_k\succeq\varepsilon I$ (slide 39).</p></div></details></div>
+<div class="box q"><div class="box-title">Pourquoi EM n'a-t-il pas de pas d'apprentissage ?</div>
+<details class="proof"><summary>Réponse</summary><div class="proof-body"><p>Parce que chaque étape est un <b>maximum exact</b> d'un sous-problème, et non un petit pas dans la direction du gradient. L'étape E a une forme close (formule de Bayes), et l'étape M aussi pour un GMM, parce que $Q$ a la forme d'une log-vraisemblance gaussienne « complète » avec des poids : moyennes, covariances et proportions pondérées. Le prix : il faut que ces deux maximisations soient calculables, ce qui n'est vrai que pour des modèles assez simples (familles exponentielles, latentes discrètes) ; sinon, on revient au gradient sur une borne (VAE, chapitre 7).</p></div></details></div>
+<hr>
+<p class="c-dim" style="font-size:13px">Pour s'entraîner : <a href="exercises.html">exercices à trous</a> (filtre « 9 · k-means &amp; EM »).</p>
+
+</div></main>
+</div>
+
+<script src="lib/katex/katex.min.js"></script>
+<script src="lib/katex/contrib/auto-render.min.js"></script>
+<script src="lib/three.min.js"></script>
+<script src="js/core/math.js"></script>
+<script src="js/core/plot2d.js"></script>
+<script src="js/core/scene3d.js"></script>
+<script src="js/core/ui.js"></script>
+<script src="js/km/k0-common.js"></script>
+<script src="js/km/k1-kmeans.js"></script>
+<script src="js/km/k2-soft.js"></script>
+<script src="js/km/k3-em.js"></script>
+<script>ML.page.boot();</script>
+</body>
+</html>
