@@ -1,4 +1,4 @@
-/* Exercices à trous sur les devoirs HW1–HW7, format « sujet d'examen ».
+/* Exercices à trous sur les devoirs HW1–HW10, format « sujet d'examen ».
    Chaque exercice est autonome : cadre et données sont dans l'énoncé (aucune référence au sujet du devoir). */
 (function (ML) {
   'use strict';
@@ -542,5 +542,129 @@ a = 0{,}5:\qquad a_{\text{new}} &= \blank{d} &&\text{(ii)}\\
       e: { kind: 'expr', ans: ['0.9^k', '0,9^k', '(0.9)^k', '(9/10)^k', '0.9^{k}'], tex: '0{,}9^k' },
       f: { kind: 'word', ans: ['0', 'zéro', 'zero'], tex: '0' },
     } }, H),
+  // ------------------------------------------------------------------ HW8
+  Object.assign({ id: 'h8a', ch: 8, title: 'Une couche ligne par ligne est équivariante, la moyenne est invariante', src: 'HW8 1.(1)',
+    text: R`<p class="hyp"><b>Cadre.</b> $P\in\R^{N\times N}$ matrice de permutation, $\mathbf 1\in\R^N$ le vecteur de uns, $X\in\R^{N\times D}$. $H(X) = \mathrm{LN}\big(X+\varphi(XW_1+\mathbf 1b_1^\top)W_2+\mathbf 1b_2^\top\big)$, avec $\varphi$ coefficient par coefficient et LayerNorm ligne par ligne (mêmes paramètres) ; $g(X) = \frac1N\mathbf 1^\top H(X)$.</p>
+<p class="claim"><b>Proposition.</b> $H(PX) = PH(X)$ et $g(PX) = g(X)$, mais l'équivariance n'implique pas l'invariance.</p>
+<p><b>Preuve.</b></p>
+$$\begin{aligned}
+P\mathbf 1 &= \blank{a}\quad\Longrightarrow\quad(PX)W_1+\mathbf 1b_1^\top = P\big(\blank{b}\big) &&\text{(i)}\\
+\varphi(PA) &= \blank{c},\qquad\mathrm{LN}(PA) = P\,\mathrm{LN}(A) &&\text{(ii)}\\
+g(PX) &= \tfrac1N\mathbf 1^\top PH(X) = \tfrac1N\big(\blank{d}\big)^\top H(X) = g(X). &&\text{(iii)}
+\end{aligned}$$
+<p>Contre-exemple : $J(X) = X$ est équivariante ; avec $X = (1,0)^\top$ et $P$ l'échange des deux lignes, $J(PX) = \blank{e}\ne J(X)$. Une application équivariante n'est donc pas forcément [[f]]. $\square$</p>`,
+    blanks: {
+      a: { kind: 'expr', ans: [R`\mathbf 1`, '1', R`\mathbf{1}`, 'ones'], tex: R`\mathbf 1` },
+      b: { kind: 'expr', ans: [R`XW_1+\mathbf 1b_1^\top`, 'XW_1+1b_1^T', 'XW1+1b1^T', R`XW_1+\mathbf{1}b_1^\top`], tex: R`XW_1+\mathbf 1b_1^\top` },
+      c: { kind: 'expr', ans: [R`P\varphi(A)`, 'P phi(A)', 'Pphi(A)', R`P\phi(A)`], tex: R`P\varphi(A)` },
+      d: { kind: 'expr', ans: [R`P^\top\mathbf 1`, 'P^T 1', 'P^T1', R`P^\top\mathbf{1}`], tex: R`P^\top\mathbf 1` },
+      e: { kind: 'expr', ans: ['(0,1)^T', R`(0,1)^\top`, '(0;1)', R`\begin{pmatrix}0\\1\end{pmatrix}`, '(0,1)'], tex: R`(0,1)^\top` },
+      f: { kind: 'word', ans: ['invariante', 'invariant'], tex: 'invariante' },
+    } }, H),
+
+  Object.assign({ id: 'h8b', ch: 8, title: 'Encodage positionnel et équivariance : la condition sur $RW$', src: 'HW8 1.(2)',
+    text: R`<p class="hyp"><b>Cadre.</b> $G(X) = (X+R)W$ avec $X,R\in\R^{N\times D}$ ($N\ge2$), $W\in\R^{D\times D}$ ; l'encodage $R$ ne bouge pas quand on permute les lignes de $X$.</p>
+<p class="claim"><b>Proposition.</b> $G(PX) = PG(X)$ pour tous $X,P$ $\iff$ toutes les lignes de $RW$ sont égales.</p>
+<p><b>Preuve.</b></p>
+$$G(PX)-PG(X) = (PX+R)W-P(X+R)W = \blank{a}.$$
+<p>La condition ne dépend donc pas de $X$. Si $RW = \mathbf 1c^\top$, alors $PRW = \blank{b}$. Réciproquement, avec $P$ la transposition des lignes $i$ et $j$, la ligne $i$ de $PRW$ est la ligne [[c]] de $RW$, d'où l'égalité des lignes. Si $W$ est inversible, la condition devient : toutes les lignes de $\blank{d}$ sont égales, c'est-à-dire que l'encodage ne code aucune [[e]]. $\square$</p>`,
+    blanks: {
+      a: { kind: 'expr', ans: ['RW-PRW', '(I-P)RW', 'RW - PRW'], tex: 'RW-PRW' },
+      b: { kind: 'expr', ans: [R`\mathbf 1c^\top`, '1c^T', 'RW', R`\mathbf{1}c^\top`], tex: R`\mathbf 1c^\top` },
+      c: { kind: 'expr', ans: ['j'], tex: 'j' },
+      d: { kind: 'expr', ans: ['R'], tex: 'R' },
+      e: { kind: 'word', ans: ['position', 'positions'], tex: 'position' },
+    } }, H),
+
+  Object.assign({ id: 'h8c', ch: 8, title: 'Deux encodages positionnels en dimension 2', src: 'HW8 1.(2)',
+    text: R`<p class="hyp"><b>Données.</b> $N = D = 2$, $R = \begin{pmatrix}0&0\\0&1\end{pmatrix}$, $W_A = \begin{pmatrix}1&0\\0&0\end{pmatrix}$, $W_B = I_2$, $G_\bullet(X) = (X+R)W_\bullet$. $X_0 = \begin{pmatrix}1&2\\3&4\end{pmatrix}$, $P_0 = \begin{pmatrix}0&1\\1&0\end{pmatrix}$.</p>
+<p><b>Calcul.</b> $RW_A$ a pour coefficient $(2,2)$ : $\blank{a}$ ; $G_A$ est donc équivariante (lignes de $RW_A$ égales). Pour $G_B$ :
+$$G_B(P_0X_0) = \begin{pmatrix}3&4\\1&\blank{b}\end{pmatrix},\qquad P_0G_B(X_0) = \begin{pmatrix}3&\blank{c}\\1&2\end{pmatrix}.$$</p>`,
+    blanks: { a: { kind: 'num', ans: 0, tol: 0 }, b: { kind: 'num', ans: 3, tol: 0 }, c: { kind: 'num', ans: 5, tol: 0 } } }, H),
+
+  Object.assign({ id: 'h8d', ch: 8, title: '$QK^\\top$ symétrique pour tout $X$ $\\iff$ $W^{(q)}W^{(k)\\top}$ symétrique', src: 'HW8 2.(2)',
+    text: R`<p class="hyp"><b>Cadre.</b> $Q = XW^{(q)}$, $K = XW^{(k)}$, $X\in\R^{N\times D}$ ($N\ge2$), $W^{(q)},W^{(k)}\in\R^{D\times D_k}$ fixés ; $M := W^{(q)}W^{(k)\top}$.</p>
+<p class="claim"><b>Proposition.</b> $QK^\top$ est symétrique pour tout $X$ si et seulement si $M$ est symétrique.</p>
+<p><b>Preuve.</b> $QK^\top = XMX^\top$ et $(QK^\top)^\top = X\blank{a}X^\top$. Si $M = M^\top$, c'est fini. Réciproquement, avec $A = M-M^\top$ et $X$ de lignes $e_a^\top$, $e_b^\top$ (les autres nulles), $(XAX^\top)_{12} = \blank{b} = 0$ pour tous $a,b$.</p>
+<p>Contre-exemple ($D = 2$, $D_k = 1$) : $W^{(q)} = (1,0)^\top$, $W^{(k)} = (0,1)^\top$, $X = I_2$ : $(QK^\top)_{12} = \blank{c}$ et $(QK^\top)_{21} = \blank{d}$. $\square$</p>`,
+    blanks: {
+      a: { kind: 'expr', ans: [R`M^\top`, 'M^T', R`W^{(k)}W^{(q)\top}`, 'W_kW_q^T'], tex: R`M^\top` },
+      b: { kind: 'expr', ans: ['A_{ab}', 'A_ab', R`e_a^\top Ae_b`, 'e_a^TAe_b', 'M_{ab}-M_{ba}', 'M_ab-M_ba'], tex: 'A_{ab}' },
+      c: { kind: 'num', ans: 1, tol: 0 }, d: { kind: 'num', ans: 0, tol: 0 },
+    } }, H),
+
+  Object.assign({ id: 'h8e', ch: 8, title: 'L\'attention est équivariante par permutation', src: 'HW8 2.(3)',
+    text: R`<p class="hyp"><b>Cadre.</b> $\mathrm{Att}(Q,K,V) = \mathrm{Softmax}_{\text{row}}(QK^\top/\sqrt{D_k})V$ avec $Q\in\R^{N\times D_k}$, $K\in\R^{M\times D_k}$, $V\in\R^{M\times D_v}$ ; $P\in\R^{N\times N}$, $T\in\R^{M\times M}$ des permutations ; $S = QK^\top/\sqrt{D_k}$, $A = \mathrm{Softmax}_{\text{row}}(S)$.</p>
+<p class="claim"><b>Proposition.</b> $\mathrm{Att}(PQ,TK,TV) = P\,\mathrm{Att}(Q,K,V)$.</p>
+<p><b>Preuve.</b></p>
+$$\begin{aligned}
+(PQ)(TK)^\top/\sqrt{D_k} &= PST^\top &&\text{(i)}\\
+\mathrm{Softmax}_{\text{row}}(PST^\top) &= \blank{a} &&\text{(ii)}\\
+\mathrm{Att}(PQ,TK,TV) &= PAT^\top TV = PA\,\blank{b}\,V = PAV. &&\text{(iii)}
+\end{aligned}$$
+<p>(ii) : permuter les lignes permute les sorties du softmax ligne par ligne ; permuter les colonnes réordonne chaque ligne sans changer sa [[c]] d'exponentielles (le dénominateur). (iii) : $T^\top T = I$. Pour la self-attention $F(X) = \mathrm{Att}(XW^{(q)},XW^{(k)},XW^{(v)})$, on prend $T = \blank{d}$ : $F(PX) = PF(X)$, sans encodage positionnel ni [[e]]. $\square$</p>`,
+    blanks: {
+      a: { kind: 'expr', ans: [R`PAT^\top`, 'PAT^T', R`P\,A\,T^\top`, 'P A T^T'], tex: R`PAT^\top` },
+      b: { kind: 'expr', ans: [R`T^\top T`, 'T^TT', 'T^T T', 'I'], tex: R`T^\top T` },
+      c: { kind: 'word', ans: ['somme', 'sum', 'la somme'], tex: 'somme' },
+      d: { kind: 'expr', ans: ['P'], tex: 'P' },
+      e: { kind: 'word', ans: ['masque', 'mask', 'masque causal', 'causal mask', 'masque d attention', 'attention mask'], tex: 'masque' },
+    } }, H),
+
+  // ------------------------------------------------------------------ HW9
+  Object.assign({ id: 'h9a', ch: 9, title: 'Une itération de k-means sur quatre points', src: 'HW9 2.(1)–(3)',
+    text: R`<p class="hyp"><b>Données.</b> $D = 1$, $x = 0,\ 2,\ 8,\ 10$, $K = 2$, centres initiaux $\mu_1^{(0)} = 0$, $\mu_2^{(0)} = 8$, $J(r,\mu) = \sum_i\sum_kr_{ik}(x_i-\mu_k)^2$.</p>
+<p><b>Calcul.</b> Après l'affectation, le groupe 1 contient $\blank{a}$ points, et $J$ (avec les centres initiaux) vaut $\blank{b}$. Après la mise à jour, $\mu_1^{(1)} = \blank{c}$, $\mu_2^{(1)} = \blank{d}$ et $J = \blank{e}$. $J$ ne peut pas augmenter car chaque étape est une minimisation [[f]] de $J$ par rapport à un bloc de variables.</p>`,
+    blanks: { a: { kind: 'num', ans: 2, tol: 0 }, b: { kind: 'num', ans: 8, tol: 0 }, c: { kind: 'num', ans: 1, tol: 0 }, d: { kind: 'num', ans: 9, tol: 0 }, e: { kind: 'num', ans: 4, tol: 0 },
+      f: { kind: 'word', ans: ['exacte', 'exact'], tex: 'exacte' } } }, H),
+
+  Object.assign({ id: 'h9b', ch: 9, title: 'Affectation souple avec $\\beta = \\ln 2$', src: 'HW9 3.(2)',
+    text: R`<p class="hyp"><b>Données.</b> $x = 0$, $\mu_1 = 0$, $\mu_2 = 1$, $\beta = \ln2$, $r_k = e^{-\beta\|x-\mu_k\|^2}/\sum_\ell e^{-\beta\|x-\mu_\ell\|^2}$.</p>
+<p><b>Calcul.</b> $e^{-\beta\|x-\mu_2\|^2} = \blank{a}$, donc $r_1 = \blank{b}$ et $r_2 = \blank{c}$. Quand $\beta\to\infty$ (centre le plus proche unique), $r_1\to\blank{d}$ : on retrouve l'affectation [[e]] du k-means.</p>`,
+    blanks: { a: { kind: 'num', ans: 0.5 }, b: { kind: 'num', ans: 2 / 3 }, c: { kind: 'num', ans: 1 / 3 }, d: { kind: 'num', ans: 1, tol: 0 },
+      e: { kind: 'word', ans: ['dure', 'hard'], tex: 'dure' } } }, H),
+
+  // ------------------------------------------------------------------ HW10
+  Object.assign({ id: 'h10a', ch: 9, title: 'Le gradient de la vraisemblance égale celui de $Q$ en $\\theta^{(t)}$', src: 'HW10 (a)',
+    text: R`<p class="hyp"><b>Cadre.</b> $z$ latente à valeurs finies, $\mathcal L(\theta) = \log p_\theta(x)$, $q^{(t)}(z) = p_{\theta^{(t)}}(z\mid x)$, $Q(\theta;\theta^{(t)}) = \E_{z\sim q^{(t)}}[\log p_\theta(x,z)]$ ($q^{(t)}$ fixée) ; probabilités $>0$, $p_\theta$ dérivable.</p>
+<p class="claim"><b>Proposition.</b> $\nabla\mathcal L(\theta^{(t)}) = \nabla_\theta Q(\theta;\theta^{(t)})\big|_{\theta^{(t)}}$.</p>
+<p><b>Preuve.</b></p>
+$$\nabla\mathcal L(\theta) = \frac{\sum_z\nabla p_\theta(x,z)}{\blank{a}} = \sum_z\frac{p_\theta(x,z)}{p_\theta(x)}\nabla\log p_\theta(x,z) = \sum_z\blank{b}\,\nabla\log p_\theta(x,z).$$
+<p>C'est une espérance sous la loi a posteriori au même $\theta$. En $\theta = \theta^{(t)}$, cette loi est $\blank{c}$, et l'on obtient $\sum_zq^{(t)}(z)\nabla\log p_\theta(x,z) = \nabla_\theta Q$. Géométriquement, la borne $Q(\cdot;\theta^{(t)})+H(q^{(t)})$ est [[d]] à $\mathcal L$ en $\theta^{(t)}$. $\square$</p>`,
+    blanks: {
+      a: { kind: 'expr', ans: [R`p_\theta(x)`, 'p_theta(x)', 'p(x)'], tex: R`p_\theta(x)` },
+      b: { kind: 'expr', ans: [R`p_\theta(z|x)`, R`p_\theta(z\mid x)`, 'p_theta(z|x)', 'p(z|x)'], tex: R`p_\theta(z\mid x)` },
+      c: { kind: 'expr', ans: [R`q^{(t)}`, 'q^(t)', 'q^t', R`q^{(t)}(z)`, R`p_{\theta^{(t)}}(z|x)`], tex: R`q^{(t)}` },
+      d: { kind: 'word', ans: ['tangente', 'tangent'], tex: 'tangente' },
+    } }, H),
+
+  Object.assign({ id: 'h10b', ch: 9, title: 'L\'identité d\'amélioration d\'EM', src: 'HW10 (b)',
+    text: R`<p class="hyp"><b>Cadre.</b> Comme ci-dessus : $\mathcal L(\theta) = \log p_\theta(x)$, $q^{(t)} = p_{\theta^{(t)}}(\cdot\mid x)$, $Q(\theta;\theta^{(t)}) = \E_{q^{(t)}}[\log p_\theta(x,z)]$ ; $\theta'$ quelconque.</p>
+<p class="claim"><b>Proposition.</b> $\mathcal L(\theta')-\mathcal L(\theta^{(t)}) = Q(\theta';\theta^{(t)})-Q(\theta^{(t)};\theta^{(t)})+\mathrm{KL}\big(q^{(t)}\,\|\,p_{\theta'}(z\mid x)\big)$, et EM ne fait pas baisser $\mathcal L$.</p>
+<p><b>Preuve.</b> $\log p_\theta(x,z) = \mathcal L(\theta)+\blank{a}$. En prenant l'espérance sous $q^{(t)}$ :
+$$Q(\theta;\theta^{(t)}) = \mathcal L(\theta)+\E_{q^{(t)}}\big[\blank{a}\big].$$
+On l'écrit pour $\theta'$ et pour $\theta^{(t)}$ (où $p_{\theta^{(t)}}(z\mid x) = q^{(t)}(z)$) et on soustrait : la différence des espérances vaut $-\mathrm{KL}(q^{(t)}\,\|\,\blank{b})$. Avec $\theta' = \theta^{(t+1)}$, l'étape M donne $\Delta Q\blank{c}0$ et le KL est $\ge0$. Égalité si et seulement si $\theta^{(t)}$ maximise déjà $Q(\cdot;\theta^{(t)})$ et les lois a posteriori en $\theta^{(t)}$ et $\theta^{(t+1)}$ sont [[d]]. $\square$</p>`,
+    blanks: {
+      a: { kind: 'expr', ans: [R`\log p_\theta(z|x)`, R`\log p_\theta(z\mid x)`, 'log p_theta(z|x)', 'log p(z|x)'], tex: R`\log p_\theta(z\mid x)` },
+      b: { kind: 'expr', ans: [R`p_{\theta'}(z|x)`, R`p_{\theta'}(z\mid x)`, "p_theta'(z|x)", "p_{theta'}(z|x)"], tex: R`p_{\theta'}(z\mid x)` },
+      c: { kind: 'expr', ans: [R`\ge`, '>=', '≥', R`\geq`], tex: R`\ge` },
+      d: { kind: 'word', ans: ['egales', 'égales', 'identiques', 'equal', 'identical', 'the same'], tex: 'égales' },
+    } }, H),
+
+  Object.assign({ id: 'h10c', ch: 9, title: 'EM généralisé : un petit pas de gradient suffit', src: 'HW10 (c)',
+    text: R`<p class="hyp"><b>Cadre.</b> Espace des paramètres ouvert, $\mathcal L$ continûment dérivable, $g := \nabla_\theta Q(\theta;\theta^{(t)})|_{\theta^{(t)}}\ne0$, et $\nabla\mathcal L(\theta^{(t)}) = g$.</p>
+<p class="claim"><b>Proposition.</b> $\theta^{(t)}+\alpha g$ fait strictement monter $\mathcal L$ pour $\alpha>0$ assez petit ; un point fixe intérieur d'EM est stationnaire.</p>
+<p><b>Preuve.</b> Avec $\phi(\alpha) = \mathcal L(\theta^{(t)}+\alpha g)$ : $\phi'(0) = \nabla\mathcal L(\theta^{(t)})^\top g = \blank{a}>0$. Par définition de la dérivée, $\phi(\alpha)>\phi(0)$ pour $\alpha$ petit, sans maximiser $Q$. Si EM exact donne $\theta^{(t+1)} = \theta^{(t)}$ intérieur, $\theta^{(t)}$ maximise $Q(\cdot;\theta^{(t)})$ sur un ouvert, donc $g = \blank{b}$, puis $\nabla\mathcal L(\theta^{(t)}) = 0$ : un point [[c]], pas forcément un maximum global. $\square$</p>`,
+    blanks: {
+      a: { kind: 'expr', ans: [R`\|g\|^2`, '||g||^2', 'g^Tg', R`g^\top g`, '|g|^2'], tex: R`\|g\|^2` },
+      b: { kind: 'num', ans: 0, tol: 0 },
+      c: { kind: 'word', ans: ['stationnaire', 'stationary', 'critique', 'critical'], tex: 'stationnaire' },
+    } }, H),
+
+  Object.assign({ id: 'h10d', ch: 9, title: 'EM bloqué sur un espace de paramètres discret', src: 'HW10 (d)',
+    text: R`<p class="hyp"><b>Données.</b> $\theta\in\{A,B\}$, $x,z\in\{0,1\}$, on observe $x = 1$. $p_A(1,0) = p_A(1,1) = \frac14$ ; $p_B(1,0) = \frac9{16}$, $p_B(1,1) = \frac1{16}$. Départ $\theta^{(0)} = A$ ; $Q(\theta;A) = \sum_zq^{(0)}(z)\ln p_\theta(1,z)$.</p>
+<p><b>Calcul.</b> $q^{(0)}(z = 0) = \blank{a}$ ; $Q(A;A) = \blank{b}$, $Q(B;A) = \blank{c}$ ; $\mathcal L(A) = \blank{d}$, $\mathcal L(B) = \blank{e}$. L'étape M choisit donc $\theta^{(1)} = $ [[f]], bien que $\mathcal L(B)>\mathcal L(A)$.</p>`,
+    blanks: { a: { kind: 'num', ans: 0.5 }, b: { kind: 'num', ans: Math.log(1 / 4) }, c: { kind: 'num', ans: Math.log(3 / 16) }, d: { kind: 'num', ans: Math.log(1 / 2) }, e: { kind: 'num', ans: Math.log(5 / 8) },
+      f: { kind: 'word', ans: ['A'], tex: 'A' } } }, H),
   );
 })(window.ML);

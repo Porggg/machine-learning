@@ -367,5 +367,87 @@ a = 0.5:\qquad a_{\text{new}} &= \blank{d} &&\text{(ii)}\\
 \end{aligned}$$
 <p>The KL term only pulls $a$ back toward [[f]], i.e. $q_a$ toward the prior: it carries no information about the data.</p>`,
     words: { f: { ans: ['0', 'zero'], tex: '0' } } },
+  // ------------------------------------------------------------------ HW8
+  h8a: { title: 'A row-wise layer is equivariant, the mean is invariant',
+    text: R`<p class="hyp"><b>Setup.</b> $P\in\R^{N\times N}$ a permutation matrix, $\mathbf 1\in\R^N$ the all-ones vector, $X\in\R^{N\times D}$. $H(X) = \mathrm{LN}\big(X+\varphi(XW_1+\mathbf 1b_1^\top)W_2+\mathbf 1b_2^\top\big)$, with $\varphi$ elementwise and LayerNorm row-wise (same parameters); $g(X) = \frac1N\mathbf 1^\top H(X)$.</p>
+<p class="claim"><b>Proposition.</b> $H(PX) = PH(X)$ and $g(PX) = g(X)$, but equivariance does not imply invariance.</p>
+<p><b>Proof.</b></p>
+$$\begin{aligned}
+P\mathbf 1 &= \blank{a}\quad\Longrightarrow\quad(PX)W_1+\mathbf 1b_1^\top = P\big(\blank{b}\big) &&\text{(i)}\\
+\varphi(PA) &= \blank{c},\qquad\mathrm{LN}(PA) = P\,\mathrm{LN}(A) &&\text{(ii)}\\
+g(PX) &= \tfrac1N\mathbf 1^\top PH(X) = \tfrac1N\big(\blank{d}\big)^\top H(X) = g(X). &&\text{(iii)}
+\end{aligned}$$
+<p>Counterexample: $J(X) = X$ is equivariant; with $X = (1,0)^\top$ and $P$ swapping the two rows, $J(PX) = \blank{e}\ne J(X)$. So an equivariant map need not be [[f]]. $\square$</p>`,
+    words: { f: { ans: ['invariant', 'invariante'], tex: 'invariant' } } },
+
+  h8b: { title: 'Positional encoding and equivariance: the condition on $RW$',
+    text: R`<p class="hyp"><b>Setup.</b> $G(X) = (X+R)W$ with $X,R\in\R^{N\times D}$ ($N\ge2$), $W\in\R^{D\times D}$; the encoding $R$ stays fixed when the rows of $X$ are permuted.</p>
+<p class="claim"><b>Proposition.</b> $G(PX) = PG(X)$ for all $X,P$ $\iff$ all rows of $RW$ are equal.</p>
+<p><b>Proof.</b></p>
+$$G(PX)-PG(X) = (PX+R)W-P(X+R)W = \blank{a}.$$
+<p>So the condition does not depend on $X$. If $RW = \mathbf 1c^\top$, then $PRW = \blank{b}$. Conversely, with $P$ the transposition of rows $i$ and $j$, row $i$ of $PRW$ is row [[c]] of $RW$, hence the rows are equal. If $W$ is invertible, the condition becomes: all rows of $\blank{d}$ are equal, i.e. the encoding encodes no [[e]] at all. $\square$</p>`,
+    words: { e: { ans: ['position', 'positions'], tex: 'position' } } },
+
+  h8c: { title: 'Two positional encodings in dimension 2',
+    text: R`<p class="hyp"><b>Data.</b> $N = D = 2$, $R = \begin{pmatrix}0&0\\0&1\end{pmatrix}$, $W_A = \begin{pmatrix}1&0\\0&0\end{pmatrix}$, $W_B = I_2$, $G_\bullet(X) = (X+R)W_\bullet$. $X_0 = \begin{pmatrix}1&2\\3&4\end{pmatrix}$, $P_0 = \begin{pmatrix}0&1\\1&0\end{pmatrix}$.</p>
+<p><b>Computation.</b> The $(2,2)$ entry of $RW_A$ is $\blank{a}$; hence $G_A$ is equivariant (equal rows of $RW_A$). For $G_B$:
+$$G_B(P_0X_0) = \begin{pmatrix}3&4\\1&\blank{b}\end{pmatrix},\qquad P_0G_B(X_0) = \begin{pmatrix}3&\blank{c}\\1&2\end{pmatrix}.$$</p>` },
+
+  h8d: { title: '$QK^\\top$ symmetric for every $X$ $\\iff$ $W^{(q)}W^{(k)\\top}$ symmetric',
+    text: R`<p class="hyp"><b>Setup.</b> $Q = XW^{(q)}$, $K = XW^{(k)}$, $X\in\R^{N\times D}$ ($N\ge2$), fixed $W^{(q)},W^{(k)}\in\R^{D\times D_k}$; $M := W^{(q)}W^{(k)\top}$.</p>
+<p class="claim"><b>Proposition.</b> $QK^\top$ is symmetric for every $X$ if and only if $M$ is symmetric.</p>
+<p><b>Proof.</b> $QK^\top = XMX^\top$ and $(QK^\top)^\top = X\blank{a}X^\top$. If $M = M^\top$ we are done. Conversely, with $A = M-M^\top$ and $X$ with rows $e_a^\top$, $e_b^\top$ (others zero), $(XAX^\top)_{12} = \blank{b} = 0$ for all $a,b$.</p>
+<p>Counterexample ($D = 2$, $D_k = 1$): $W^{(q)} = (1,0)^\top$, $W^{(k)} = (0,1)^\top$, $X = I_2$: $(QK^\top)_{12} = \blank{c}$ and $(QK^\top)_{21} = \blank{d}$. $\square$</p>` },
+
+  h8e: { title: 'Attention is permutation equivariant',
+    text: R`<p class="hyp"><b>Setup.</b> $\mathrm{Att}(Q,K,V) = \mathrm{Softmax}_{\text{row}}(QK^\top/\sqrt{D_k})V$ with $Q\in\R^{N\times D_k}$, $K\in\R^{M\times D_k}$, $V\in\R^{M\times D_v}$; $P\in\R^{N\times N}$, $T\in\R^{M\times M}$ permutations; $S = QK^\top/\sqrt{D_k}$, $A = \mathrm{Softmax}_{\text{row}}(S)$.</p>
+<p class="claim"><b>Proposition.</b> $\mathrm{Att}(PQ,TK,TV) = P\,\mathrm{Att}(Q,K,V)$.</p>
+<p><b>Proof.</b></p>
+$$\begin{aligned}
+(PQ)(TK)^\top/\sqrt{D_k} &= PST^\top &&\text{(i)}\\
+\mathrm{Softmax}_{\text{row}}(PST^\top) &= \blank{a} &&\text{(ii)}\\
+\mathrm{Att}(PQ,TK,TV) &= PAT^\top TV = PA\,\blank{b}\,V = PAV. &&\text{(iii)}
+\end{aligned}$$
+<p>(ii): permuting rows permutes the outputs of the row-wise softmax; permuting columns reorders each row without changing its [[c]] of exponentials (the denominator). (iii): $T^\top T = I$. For self-attention $F(X) = \mathrm{Att}(XW^{(q)},XW^{(k)},XW^{(v)})$, take $T = \blank{d}$: $F(PX) = PF(X)$, with no positional encoding and no [[e]]. $\square$</p>`,
+    words: { c: { ans: ['sum', 'somme'], tex: 'sum' }, e: { ans: ['mask', 'causal mask', 'attention mask', 'masque'], tex: 'mask' } } },
+
+  // ------------------------------------------------------------------ HW9
+  h9a: { title: 'One k-means iteration on four points',
+    text: R`<p class="hyp"><b>Data.</b> $D = 1$, $x = 0,\ 2,\ 8,\ 10$, $K = 2$, initial centers $\mu_1^{(0)} = 0$, $\mu_2^{(0)} = 8$, $J(r,\mu) = \sum_i\sum_kr_{ik}(x_i-\mu_k)^2$.</p>
+<p><b>Computation.</b> After the assignment, cluster 1 contains $\blank{a}$ points, and $J$ (with the initial centers) is $\blank{b}$. After the update, $\mu_1^{(1)} = \blank{c}$, $\mu_2^{(1)} = \blank{d}$ and $J = \blank{e}$. $J$ cannot increase because each step is an [[f]] minimization of $J$ over one block of variables.</p>`,
+    words: { f: { ans: ['exact', 'exacte'], tex: 'exact' } } },
+
+  h9b: { title: 'Soft assignment with $\\beta = \\ln 2$',
+    text: R`<p class="hyp"><b>Data.</b> $x = 0$, $\mu_1 = 0$, $\mu_2 = 1$, $\beta = \ln2$, $r_k = e^{-\beta\|x-\mu_k\|^2}/\sum_\ell e^{-\beta\|x-\mu_\ell\|^2}$.</p>
+<p><b>Computation.</b> $e^{-\beta\|x-\mu_2\|^2} = \blank{a}$, so $r_1 = \blank{b}$ and $r_2 = \blank{c}$. As $\beta\to\infty$ (unique nearest center), $r_1\to\blank{d}$: we recover the [[e]] assignment of k-means.</p>`,
+    words: { e: { ans: ['hard', 'dure'], tex: 'hard' } } },
+
+  // ------------------------------------------------------------------ HW10
+  h10a: { title: 'The likelihood gradient equals the gradient of $Q$ at $\\theta^{(t)}$',
+    text: R`<p class="hyp"><b>Setup.</b> Finite-valued latent $z$, $\mathcal L(\theta) = \log p_\theta(x)$, $q^{(t)}(z) = p_{\theta^{(t)}}(z\mid x)$, $Q(\theta;\theta^{(t)}) = \E_{z\sim q^{(t)}}[\log p_\theta(x,z)]$ ($q^{(t)}$ fixed); positive probabilities, $p_\theta$ differentiable.</p>
+<p class="claim"><b>Proposition.</b> $\nabla\mathcal L(\theta^{(t)}) = \nabla_\theta Q(\theta;\theta^{(t)})\big|_{\theta^{(t)}}$.</p>
+<p><b>Proof.</b></p>
+$$\nabla\mathcal L(\theta) = \frac{\sum_z\nabla p_\theta(x,z)}{\blank{a}} = \sum_z\frac{p_\theta(x,z)}{p_\theta(x)}\nabla\log p_\theta(x,z) = \sum_z\blank{b}\,\nabla\log p_\theta(x,z).$$
+<p>This is an expectation under the posterior at the same $\theta$. At $\theta = \theta^{(t)}$ this distribution is $\blank{c}$, which gives $\sum_zq^{(t)}(z)\nabla\log p_\theta(x,z) = \nabla_\theta Q$. Geometrically, the bound $Q(\cdot;\theta^{(t)})+H(q^{(t)})$ is [[d]] to $\mathcal L$ at $\theta^{(t)}$. $\square$</p>`,
+    words: { d: { ans: ['tangent', 'tangente'], tex: 'tangent' } } },
+
+  h10b: { title: 'The EM improvement identity',
+    text: R`<p class="hyp"><b>Setup.</b> As above: $\mathcal L(\theta) = \log p_\theta(x)$, $q^{(t)} = p_{\theta^{(t)}}(\cdot\mid x)$, $Q(\theta;\theta^{(t)}) = \E_{q^{(t)}}[\log p_\theta(x,z)]$; $\theta'$ arbitrary.</p>
+<p class="claim"><b>Proposition.</b> $\mathcal L(\theta')-\mathcal L(\theta^{(t)}) = Q(\theta';\theta^{(t)})-Q(\theta^{(t)};\theta^{(t)})+\mathrm{KL}\big(q^{(t)}\,\|\,p_{\theta'}(z\mid x)\big)$, and EM does not decrease $\mathcal L$.</p>
+<p><b>Proof.</b> $\log p_\theta(x,z) = \mathcal L(\theta)+\blank{a}$. Taking the expectation under $q^{(t)}$:
+$$Q(\theta;\theta^{(t)}) = \mathcal L(\theta)+\E_{q^{(t)}}\big[\blank{a}\big].$$
+Write it for $\theta'$ and for $\theta^{(t)}$ (where $p_{\theta^{(t)}}(z\mid x) = q^{(t)}(z)$) and subtract: the difference of expectations is $-\mathrm{KL}(q^{(t)}\,\|\,\blank{b})$. With $\theta' = \theta^{(t+1)}$, the M-step gives $\Delta Q\blank{c}0$ and the KL is $\ge0$. Equality iff $\theta^{(t)}$ already maximizes $Q(\cdot;\theta^{(t)})$ and the posteriors at $\theta^{(t)}$ and $\theta^{(t+1)}$ are [[d]]. $\square$</p>`,
+    words: { d: { ans: ['equal', 'identical', 'the same', 'egales'], tex: 'equal' } } },
+
+  h10c: { title: 'Generalized EM: a small gradient step is enough',
+    text: R`<p class="hyp"><b>Setup.</b> Open parameter space, $\mathcal L$ continuously differentiable, $g := \nabla_\theta Q(\theta;\theta^{(t)})|_{\theta^{(t)}}\ne0$, and $\nabla\mathcal L(\theta^{(t)}) = g$.</p>
+<p class="claim"><b>Proposition.</b> $\theta^{(t)}+\alpha g$ strictly increases $\mathcal L$ for small enough $\alpha>0$; an interior fixed point of EM is stationary.</p>
+<p><b>Proof.</b> With $\phi(\alpha) = \mathcal L(\theta^{(t)}+\alpha g)$: $\phi'(0) = \nabla\mathcal L(\theta^{(t)})^\top g = \blank{a}>0$. By definition of the derivative, $\phi(\alpha)>\phi(0)$ for small $\alpha$, without maximizing $Q$. If exact EM gives an interior $\theta^{(t+1)} = \theta^{(t)}$, then $\theta^{(t)}$ maximizes $Q(\cdot;\theta^{(t)})$ on an open set, so $g = \blank{b}$, hence $\nabla\mathcal L(\theta^{(t)}) = 0$: a [[c]] point, not necessarily a global maximum. $\square$</p>`,
+    words: { c: { ans: ['stationary', 'critical', 'stationnaire'], tex: 'stationary' } } },
+
+  h10d: { title: 'EM stuck on a discrete parameter space',
+    text: R`<p class="hyp"><b>Data.</b> $\theta\in\{A,B\}$, $x,z\in\{0,1\}$, we observe $x = 1$. $p_A(1,0) = p_A(1,1) = \frac14$; $p_B(1,0) = \frac9{16}$, $p_B(1,1) = \frac1{16}$. Start $\theta^{(0)} = A$; $Q(\theta;A) = \sum_zq^{(0)}(z)\ln p_\theta(1,z)$.</p>
+<p><b>Computation.</b> $q^{(0)}(z = 0) = \blank{a}$; $Q(A;A) = \blank{b}$, $Q(B;A) = \blank{c}$; $\mathcal L(A) = \blank{d}$, $\mathcal L(B) = \blank{e}$. The M-step therefore picks $\theta^{(1)} = $ [[f]], although $\mathcal L(B)>\mathcal L(A)$.</p>`,
+    words: { f: { ans: ['A'], tex: 'A' } } },
   });
 })(window.ML);
